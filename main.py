@@ -30,7 +30,7 @@ if not all([OPENAI_API_KEY, MCP_PIPEDREAM_URL, PINECONE_PLUGIN_API_KEY]):
     st.error("One or more critical secrets are missing (OpenAI, Pipedream, Pinecone Plugin).")
     st.stop()
 
-# --- LLM for the LangGraph Agent (Upgraded to gpt-4o for better reasoning) ---
+# --- LLM for the LangGraph Agent (Using gpt-4o for best reasoning) ---
 llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
 THREAD_ID = "fifi_streamlit_session"
 
@@ -69,24 +69,41 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
         return True
     return False
 
-# --- Custom Tool Definition with PURE Query Passthrough ---
+# --- Custom Tool Definition with Allulose Guardrail ---
 def _query_pinecone_assistant_with_client(query: str, client) -> str:
     try:
         if not client:
             return "Error: Pinecone Assistant client was not provided to the tool."
 
-        # --- KEY CHANGE HERE: We send the user's query PURELY and DIRECTLY. ---
-        # No wrapper prompt that could interfere with the semantic search.
+        # Send the clean query directly for best semantic search results
         sdk_message = Message(role="user", content=query)
-        # --- END KEY CHANGE ---
-        
-        # Use gpt-4o for the backend assistant call, as this is what worked in the direct client.
         response_from_sdk = client.chat(messages=[sdk_message], model="gpt-4o") 
         
+        response_text = ""
         if hasattr(response_from_sdk, 'message') and hasattr(response_from_sdk.message, 'content'):
-            return response_from_sdk.message.content or "(The assistant returned an empty content.)"
-        
-        return "(Could not find content in the assistant's response.)"
+            response_text = response_from_sdk.message.content or ""
+        else:
+            return "(Could not find content in the assistant's response.)"
+
+        # --- KEY CHANGE: ALLULOSE GUARDRAIL ---
+        # Check if the query is about Allulose and Europe/EFSA/approval
+        query_lower = query.lower()
+        if 'allulose' in query_lower and ('europe' in query_lower or 'efsa' in query_lower or 'approve' in query_lower):
+            print("INFO: Allulose regulatory guardrail triggered.")
+            # Start with the definitive, correct answer.
+            corrected_response = "Allulose is not yet approved for use as a novel food in the European Union (EU) and the UK. Its regulatory status is still pending with authorities like EFSA."
+            
+            # If the original response contained useful product info, append it.
+            if "allsweet" in response_text.lower():
+                # We add a transition phrase to make the combined response logical.
+                corrected_response += "\n\nWhile it awaits full approval, here is some information on available Allulose products for other regions or for R&D purposes:\n\n" + response_text
+            
+            return corrected_response
+        # --- END OF GUARDRAIL ---
+
+        # If the guardrail is not triggered, return the original response.
+        return response_text
+
     except Exception as e:
         print(f"ERROR querying Pinecone Assistant tool: {e}")
         return f"An error occurred while trying to get product information: {str(e)}"
@@ -94,7 +111,7 @@ def _query_pinecone_assistant_with_client(query: str, client) -> str:
 # --- Agent Initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
-    print("@@@ get_agent_components: Populating cache by running initialization...")
+    print("@@@ get_agent_components: Populating cache...")
     
     try:
         pc = Pinecone(api_key=PINECONE_PLUGIN_API_KEY)
@@ -114,7 +131,6 @@ def get_agent_components():
     pinecone_assistant_tool = Tool(
         name="get_12taste_product_context",
         func=bound_query_func,
-        # Updated description to explicitly include 'regulatory status' to help the agent
         description="Use this tool for all questions about 1-2-Taste products, services, ingredients, flavors, recipes, applications, regulatory status, or any topic related to the 1-2-Taste catalog or food and beverage industry."
     )
 
@@ -131,24 +147,17 @@ def get_agent_components():
         "all_tool_details_for_prompt": all_tool_details
     }
 
-# --- Initialize session state ---
-if "messages" not in st.session_state: st.session_state.messages = []
-if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
-if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
-
 # --- Simplified System Prompt Definition ---
 def get_system_prompt(agent_components):
     pinecone_tool = agent_components['pinecone_tool_name']
     prompt = f"""You are FiFi, a specialized AI assistant for 1-2-Taste.
 
 **Primary Directives:**
-
 1.  **Tool Prioritization:**
     *   For any query about 1-2-Taste products, services, ingredients, recipes, or industry topics, you **MUST** use the `{pinecone_tool}` tool.
     *   **This includes creative requests like "help me with a recipe." In such cases, use the tool to find relevant ingredients and then use that information to provide recipe suggestions.**
     *   For e-commerce tasks like orders or customer accounts, use the appropriate WooCommerce tool based on its description.
     *   For any other topic, you **MUST** politely decline, stating you specialize in 1-2-Taste topics.
-
 2.  **User-Facing Persona:**
     *   When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER reveal internal tool names.**
     *   **Do not state product prices.** If asked, direct users to the product page or a sales contact.

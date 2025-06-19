@@ -2,7 +2,7 @@ import streamlit as st
 import datetime
 import asyncio
 import tiktoken
-from functools import partial # <-- Import partial for dependency injection
+from functools import partial
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -66,9 +66,14 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
         return True
     return False
 
-# --- Custom Tool Definition with Dependency Injection ---
-# This function ACCEPTS the client as an argument. It does NOT use st.session_state.
-def _query_pinecone_assistant_with_client(query: str, client: Pinecone.Assistant) -> str:
+# --- Custom Tool Definition with Corrected Type Hint ---
+# This function now accepts the client as an argument.
+def _query_pinecone_assistant_with_client(query: str, client) -> str: # <-- CORRECTED THIS LINE
+    """
+    Use this tool to get information about 1-2-Taste products, ingredients, flavors, 
+    recipes, applications, or any other topic related to the 1-2-Taste catalog. 
+    This is the primary tool for all product-related questions.
+    """
     try:
         if not client:
             return "Error: Pinecone Assistant client was not provided to the tool."
@@ -88,8 +93,7 @@ def _query_pinecone_assistant_with_client(query: str, client: Pinecone.Assistant
         print(f"ERROR querying Pinecone Assistant tool: {e}")
         return f"An error occurred while trying to get product information: {str(e)}"
 
-# --- Robust Agent Initialization ---
-# This is a SYNCHRONOUS function that Streamlit will cache.
+# --- Agent Initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
     print("@@@ get_agent_components: Populating cache by running initialization...")
@@ -103,7 +107,6 @@ def get_agent_components():
         raise e 
 
     # Part 2: Run the ASYNCHRONOUS part (getting MCP tools)
-    # This is safe because it runs exactly once inside the cached function.
     async def get_mcp_tools():
         mcp_client = MultiServerMCPClient({"pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}})
         return await mcp_client.get_tools()
@@ -111,12 +114,11 @@ def get_agent_components():
     woocommerce_tools = asyncio.run(get_mcp_tools())
 
     # Part 3: Combine Tools and Build Agent using Dependency Injection
-    # We "bake" the initialized client into our tool's function.
     bound_query_func = partial(_query_pinecone_assistant_with_client, client=pinecone_assistant_client)
 
     pinecone_assistant_tool = Tool(
         name="get_12taste_product_context",
-        func=bound_query_func, # Use the function with the client baked in
+        func=bound_query_func,
         description="Use this tool to get information about 1-2-Taste products, ingredients, flavors, recipes, applications, or any other topic related to the 1-2-Taste catalog. This is the primary tool for all product-related questions."
     )
 
@@ -125,7 +127,7 @@ def get_agent_components():
     agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
     all_tool_details = {tool.name: tool.description for tool in all_tools}
     
-    print("@@@ get_agent_components: Initialization complete. Resources are now cached.")
+    print("@@@ get_agent_components: Initialization complete.")
     return {
         "agent_executor": agent_executor,
         "memory_instance": memory,
@@ -206,8 +208,6 @@ def handle_new_query_submission(query_text: str):
 st.title("FiFi Co-Pilot 🚀 (LangGraph Hybrid Agent)")
 
 try:
-    # This is now a simple, synchronous call.
-    # The first time, it runs the expensive init. Subsequent times, it's instant.
     agent_components = get_agent_components()
     st.session_state.components_loaded = True 
 except Exception as e:

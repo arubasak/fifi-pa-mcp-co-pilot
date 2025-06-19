@@ -31,7 +31,7 @@ try:
     PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
     PINECONE_ENVIRONMENT = st.secrets["PINECONE_REGION"]
     MCP_PIPEDREAM_URL = st.secrets.get("MCP_PIPEDREAM_URL")
-    ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME", "fifiv1")
+    ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME", "fifi")
 except KeyError as e:
     st.error(f"Missing critical secret: {e}. The app cannot continue.")
     st.stop()
@@ -66,7 +66,7 @@ def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread
 
     try:
         # Now, this call will always have at least one message.
-        response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4.1")
+        response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")
         content = getattr(getattr(response_from_sdk, "message", None), "content", None)
         return content or "I found no information on that topic in the knowledge base."
 

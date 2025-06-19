@@ -30,8 +30,8 @@ if not all([OPENAI_API_KEY, MCP_PIPEDREAM_URL, PINECONE_PLUGIN_API_KEY]):
     st.error("One or more critical secrets are missing (OpenAI, Pipedream, Pinecone Plugin).")
     st.stop()
 
-# --- LLM for the LangGraph Agent (Reverted to gpt-4o-mini as reasoning is not the issue) ---
-llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0.2)
+# --- LLM for the LangGraph Agent (Upgraded to gpt-4o for better reasoning) ---
+llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
 THREAD_ID = "fifi_streamlit_session"
 
 # --- Helper Functions (Unchanged) ---
@@ -69,12 +69,8 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
         return True
     return False
 
-# --- Custom Tool Definition with Pure Query Passthrough ---
+# --- Custom Tool Definition with PURE Query Passthrough ---
 def _query_pinecone_assistant_with_client(query: str, client) -> str:
-    """
-    Use this tool to get information about 1-2-Taste products, services, ingredients, flavors, 
-    recipes, applications, or any other topic related to the 1-2-Taste catalog or food and beverage industry.
-    """
     try:
         if not client:
             return "Error: Pinecone Assistant client was not provided to the tool."
@@ -98,7 +94,7 @@ def _query_pinecone_assistant_with_client(query: str, client) -> str:
 # --- Agent Initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
-    print("@@@ get_agent_components: Populating cache...")
+    print("@@@ get_agent_components: Populating cache by running initialization...")
     
     try:
         pc = Pinecone(api_key=PINECONE_PLUGIN_API_KEY)
@@ -118,7 +114,8 @@ def get_agent_components():
     pinecone_assistant_tool = Tool(
         name="get_12taste_product_context",
         func=bound_query_func,
-        description="Use this tool to get information about 1-2-Taste products, services, ingredients, flavors, recipes, applications, or any other topic related to the 1-2-Taste catalog or food and beverage industry. This is the primary tool for all product-related questions."
+        # Updated description to explicitly include 'regulatory status' to help the agent
+        description="Use this tool for all questions about 1-2-Taste products, services, ingredients, flavors, recipes, applications, regulatory status, or any topic related to the 1-2-Taste catalog or food and beverage industry."
     )
 
     all_tools = [pinecone_assistant_tool] + woocommerce_tools
@@ -145,10 +142,13 @@ def get_system_prompt(agent_components):
     prompt = f"""You are FiFi, a specialized AI assistant for 1-2-Taste.
 
 **Primary Directives:**
+
 1.  **Tool Prioritization:**
     *   For any query about 1-2-Taste products, services, ingredients, recipes, or industry topics, you **MUST** use the `{pinecone_tool}` tool.
+    *   **This includes creative requests like "help me with a recipe." In such cases, use the tool to find relevant ingredients and then use that information to provide recipe suggestions.**
     *   For e-commerce tasks like orders or customer accounts, use the appropriate WooCommerce tool based on its description.
     *   For any other topic, you **MUST** politely decline, stating you specialize in 1-2-Taste topics.
+
 2.  **User-Facing Persona:**
     *   When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER reveal internal tool names.**
     *   **Do not state product prices.** If asked, direct users to the product page or a sales contact.
@@ -160,6 +160,7 @@ Answer the user's latest query based on these core directives and the conversati
 
 # --- Async handler for user queries ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
+    # ... (function is unchanged) ...
     assistant_reply = ""
     try:
         agent_executor = agent_components["agent_executor"]
@@ -197,6 +198,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
+    # ... (function is unchanged) ...
     if not st.session_state.get('thinking_for_ui', False):
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
@@ -224,6 +226,7 @@ for question in preview_questions:
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
+    # ... (function is unchanged) ...
     st.session_state.messages = []
     st.session_state.thinking_for_ui = False
     st.session_state.query_to_process = None
@@ -236,6 +239,7 @@ if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     st.rerun()
 
 if st.session_state.messages:
+    # ... (function is unchanged) ...
     chat_export_data_txt = "\n\n".join([f"{msg.get('role', 'Unknown').capitalize()}: {msg.get('content', '')}" for msg in st.session_state.messages])
     current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     st.sidebar.download_button(

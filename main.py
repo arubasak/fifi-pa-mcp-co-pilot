@@ -91,7 +91,7 @@ def initialize_agent_and_tools():
         pinecone_tool = Tool(
             name="get_product_and_knowledge_info",
             func=partial(query_pinecone_knowledge_base, assistant=pinecone_assistant, memory_instance=memory, thread_config=THREAD_CONFIG),
-            description="Use for any questions about products, ingredients, recipes, or company knowledge."
+            description="Use for any questions about products, services, ingredients, recipes, or company knowledge."
         )
         all_tools.append(pinecone_tool)
         print("✅ Pinecone tool loaded.")
@@ -123,6 +123,8 @@ SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. You a
 2.  **E-commerce Tasks:** For tasks related to customer orders, shipping, or accounts, you **MUST** use the appropriate WooCommerce tool from your list.
 3.  **Error Handling:** If a tool returns an error message, you must relay that information clearly to the user. Do not try to make up an answer. State that you were unable to retrieve the information.
 4.  **Stay Focused:** Do not answer questions outside of these topics. Politely decline."""
+5.  *   When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER reveal internal tool names.**
+6.  **Cite your sources.** When the `{pinecone_tool}` tool provides a source URL, you must include it in your response. If no URL is available from the tool, state that the info is from the 1-2-Taste catalog.
 
 # --- Chat Submission & UI (Unchanged) ---
 def handle_submission(query):

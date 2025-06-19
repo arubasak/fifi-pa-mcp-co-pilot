@@ -66,22 +66,32 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
         return True
     return False
 
-# --- Custom Tool Definition with Pure Query Passthrough ---
+# --- Custom Tool Definition with Allulose Guardrail ---
 def _query_pinecone_assistant_with_client(query: str, client) -> str:
     try:
         if not client:
             return "Error: Pinecone Assistant client was not provided to the tool."
 
-        sdk_message = Message(role="user", content=query)
-        response_from_sdk = client.chat(messages=[sdk_message], model="gpt-4o") 
+        response_from_sdk = client.chat(messages=[Message(role="user", content=query)], model="gpt-4o") 
         
+        response_text = ""
         if hasattr(response_from_sdk, 'message') and hasattr(response_from_sdk.message, 'content'):
-            response_text = response_from_sdk.message.content
-            if "unable to retrieve" in response_text.lower() or "i can help you with general information" in response_text.lower():
-                 return f"(The product assistant could not find specific information for the query: '{query}')"
-            return response_text or "(The assistant returned an empty content.)"
-        
-        return "(Could not find content in the assistant's response.)"
+            response_text = response_from_sdk.message.content or ""
+        else:
+            return "(Could not find content in the assistant's response.)"
+
+        query_lower = query.lower()
+        if 'allulose' in query_lower and ('europe' in query_lower or 'efsa' in query_lower or 'approve' in query_lower):
+            print("INFO: Allulose regulatory guardrail triggered.")
+            corrected_response = "Allulose is not yet approved for use as a novel food in the European Union (EU) and the UK. Its regulatory status is still pending with authorities like EFSA."
+            
+            if "allsweet" in response_text.lower():
+                corrected_response += "\n\nWhile it awaits full approval, here is some information on available Allulose products for other regions or for R&D purposes:\n\n" + response_text
+            
+            return corrected_response
+
+        return response_text
+
     except Exception as e:
         print(f"ERROR querying Pinecone Assistant tool: {e}")
         return f"An error occurred while trying to get product information: {str(e)}"
@@ -122,8 +132,7 @@ def get_agent_components():
         "agent_executor": agent_executor,
         "memory_instance": memory,
         "pinecone_tool_name": pinecone_assistant_tool.name,
-        "all_tool_details_for_prompt": all_tool_details,
-        "pinecone_assistant_client": pinecone_assistant_client
+        "all_tool_details_for_prompt": all_tool_details
     }
 
 # --- Simplified System Prompt Definition ---
@@ -194,14 +203,12 @@ def handle_new_query_submission(query_text: str):
 # --- Streamlit App Starts Here ---
 st.title("FiFi Co-Pilot 🚀 (LangGraph Hybrid Agent)")
 
-# --- KEY FIX HERE: Initialize UI-critical state BEFORE attempting agent initialization ---
+# --- Initialize UI-critical state BEFORE attempting agent initialization ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
 if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
-# --- END KEY FIX ---
 
 try:
-    # Get all agent components from the single cached, synchronous function
     agent_components = get_agent_components()
     st.session_state.components_loaded = True 
 except Exception as e:
@@ -231,7 +238,9 @@ if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     st.rerun()
 
 if st.session_state.messages:
-    chat_export_data_txt = "\n\n".join([f"{msg.get('role', 'Unknown').capitalize()}: {str(msg.get('content', '')}" for msg in st.session_state.messages])
+    # --- CORRECTED LINE HERE ---
+    chat_export_data_txt = "\n\n".join([f"{msg.get('role', 'Unknown').capitalize()}: {str(msg.get('content', ''))}" for msg in st.session_state.messages])
+    # --- END CORRECTION ---
     current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     st.sidebar.download_button(
         label="📥 Download Chat (TXT)", data=chat_export_data_txt,

@@ -30,7 +30,7 @@ if not all([OPENAI_API_KEY, MCP_PIPEDREAM_URL, PINECONE_PLUGIN_API_KEY]):
     st.error("One or more critical secrets are missing (OpenAI, Pipedream, Pinecone Plugin).")
     st.stop()
 
-llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0.2)
+llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
 THREAD_ID = "fifi_streamlit_session"
 
 # --- Helper Functions (Unchanged) ---
@@ -152,8 +152,6 @@ def get_system_prompt(agent_components):
     *   For any other topic, you **MUST** politely decline, stating you specialize in 1-2-Taste topics.
 2.  **User-Facing Persona:**
     *   When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER reveal internal tool names.**
-    *   **Do not state product prices.** If asked, direct users to the product page or a sales contact.
-    *   **Cite your sources.** When the `{pinecone_tool}` tool provides a source URL, you must include it in your response. If no URL is available from the tool, state that the info is from the 1-2-Taste catalog.
 
 Answer the user's latest query based on these core directives and the conversation history.
 """

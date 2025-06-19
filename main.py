@@ -70,7 +70,7 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict):
         memory_instance.put(thread_config, {"messages": pruned_messages})
         print("History pruned.")
 
-# --- Pinecone Tool Function (sync version) ---
+# --- Pinecone Tool Function (safe version) ---
 def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread_config: dict) -> str:
     checkpoint = memory_instance.get(thread_config)
     history_messages = checkpoint.get("messages", []) if checkpoint else []
@@ -82,12 +82,17 @@ def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread
         elif isinstance(msg, dict) and msg.get("type") != "system":
             sdk_messages.append(Message(role=msg.get("type"), content=msg.get("content")))
 
+    # ✅ Fallback to prevent Pinecone 400 error
+    if not sdk_messages:
+        print("⚠️ No valid history found. Sending default user query message to Pinecone.")
+        sdk_messages = [Message(role="user", content=query)]
+
     try:
         print(f"\n--- DEBUG: Querying Pinecone ---")
         print(f"Query: {query}")
         print(f"Messages: {[msg.dict() for msg in sdk_messages]}")
 
-        response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")  # Optional: switch to "gpt-4" if "gpt-4o" fails
+        response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")  # Try "gpt-4" if needed
 
         print(f"Response from SDK: {response_from_sdk}")
 
@@ -197,5 +202,5 @@ if user_prompt:
     handle_submission(user_prompt)
     st.rerun()
 
-# --- Sidebar (optional) ---
+# --- Sidebar ---
 st.sidebar.markdown("---")

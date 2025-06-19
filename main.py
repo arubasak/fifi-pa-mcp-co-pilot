@@ -96,9 +96,12 @@ def initialize_agent_and_tools():
     # 4. Fetch the WooCommerce Tools
     async def get_mcp_tools():
         try:
+            # --- THIS IS THE FIXED LINE ---
+            # I removed the confusing ", transport": "sse" part
             mcp_client = MultiServerMCPClient({"pipedream": {"url": MCP_PIPEDREAM_URL}})
             return await mcp_client.get_tools()
         except Exception as e:
+            # The error message you saw came from here
             st.warning(f"Could not load WooCommerce tools: {e}. Proceeding without them.")
             return []
     woocommerce_tools = asyncio.run(get_mcp_tools())

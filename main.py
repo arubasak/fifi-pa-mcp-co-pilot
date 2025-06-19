@@ -99,12 +99,18 @@ async def query_pinecone_knowledge_base(query: str, assistant, memory_instance, 
         print(f"\n--- FATAL ERROR in Pinecone Tool ---\n{error_details}\n--- END OF ERROR ---\n")
         return f"An error occurred:\n\n```\n{error_details}\n```"
 
+# --- Synchronous wrapper for the async tool ---
+def run_query_in_sync(query):
+    return asyncio.run(query_pinecone_knowledge_base(query, assistant=pinecone_assistant, memory_instance=memory, thread_config=THREAD_CONFIG))
+
 # --- Agent and Tool Initialization ---
 @st.cache_resource(ttl=3600)
 def initialize_agent_and_tools():
     print("--- Initializing agent and all tools ---")
     all_tools = []
+    global memory
     memory = MemorySaver()
+    global pinecone_assistant
 
     try:
         pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
@@ -112,7 +118,7 @@ def initialize_agent_and_tools():
 
         pinecone_tool = Tool(
             name="get_product_and_knowledge_info",
-            func=partial(query_pinecone_knowledge_base, assistant=pinecone_assistant, memory_instance=memory, thread_config=THREAD_CONFIG),
+            func=run_query_in_sync,
             description="Use for any questions about products, ingredients, recipes, or company knowledge."
         )
         all_tools.append(pinecone_tool)
@@ -137,6 +143,7 @@ def initialize_agent_and_tools():
 
     print("--- ✅ Agent is ready ---")
     return agent_executor, memory
+
 
 # --- Static System Prompt ---
 SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. Provide detailed yet clear answers about ingredients, products, sourcing, and food technology. Use the provided tools to get relevant data."""

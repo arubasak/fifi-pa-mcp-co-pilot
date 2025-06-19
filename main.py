@@ -87,7 +87,7 @@ def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread
         print(f"Query: {query}")
         print(f"Messages: {[msg.dict() for msg in sdk_messages]}")
 
-        response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")
+        response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")  # Optional: switch to "gpt-4" if "gpt-4o" fails
 
         print(f"Response from SDK: {response_from_sdk}")
 
@@ -97,7 +97,7 @@ def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread
     except Exception:
         error_details = traceback.format_exc()
         print(f"\n--- FATAL ERROR in Pinecone Tool ---\n{error_details}\n--- END OF ERROR ---\n")
-        return f"An error occurred:\n\n```\n{error_details}\n```"
+        return f"❌ An error occurred while querying Pinecone:\n\n```\n{error_details}\n```"
 
 # --- Initialize Agent & Tools ---
 @st.cache_resource(ttl=3600)

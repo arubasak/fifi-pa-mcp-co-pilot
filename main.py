@@ -9,7 +9,7 @@ import nest_asyncio
 # Apply patch to allow nested event loops in Streamlit
 nest_asyncio.apply()
 
-# --- Core Imports for the Agent Framework ---
+# --- Core Imports ---
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
@@ -17,12 +17,12 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
 from langchain_core.messages import HumanMessage, AIMessage
 
-# --- Pinecone Assistant SDK ---
+# --- Pinecone SDK ---
 from pinecone import Pinecone
 from pinecone_plugins.assistant.models.chat import Message
 from pinecone_plugins.assistant.control.core.client.exceptions import PineconeApiException
 
-# --- Configuration & Secrets ---
+# --- Config & Secrets ---
 st.set_page_config(page_title="FiFi Co-Pilot (Debug Mode)", layout="wide")
 THREAD_CONFIG = {"configurable": {"thread_id": "fifi_production_v1_debug"}}
 
@@ -36,7 +36,7 @@ except KeyError as e:
     st.error(f"Missing critical secret: {e}. The app cannot continue.")
     st.stop()
 
-# --- Memory Management ---
+# --- Memory ---
 def count_tokens(messages: list, model_encoding: str = "cl100k_base") -> int:
     if not messages:
         return 0
@@ -70,8 +70,8 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict):
         memory_instance.put(thread_config, {"messages": pruned_messages})
         print("History pruned.")
 
-# --- Tool Definitions ---
-async def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread_config: dict) -> str:
+# --- Pinecone Tool Function (sync version) ---
+def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread_config: dict) -> str:
     checkpoint = memory_instance.get(thread_config)
     history_messages = checkpoint.get("messages", []) if checkpoint else []
 
@@ -83,13 +83,13 @@ async def query_pinecone_knowledge_base(query: str, assistant, memory_instance, 
             sdk_messages.append(Message(role=msg.get("type"), content=msg.get("content")))
 
     try:
-        print(f"\n--- DEBUG: Attempting to query Pinecone ---")
+        print(f"\n--- DEBUG: Querying Pinecone ---")
         print(f"Query: {query}")
-        print(f"Messages sent: {[msg.dict() for msg in sdk_messages]}")
+        print(f"Messages: {[msg.dict() for msg in sdk_messages]}")
 
-        response_from_sdk = await assistant.chat(messages=sdk_messages, model="gpt-4o")
+        response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")
 
-        print(f"DEBUG: Response from SDK: {response_from_sdk}")
+        print(f"Response from SDK: {response_from_sdk}")
 
         content = getattr(getattr(response_from_sdk, "message", None), "content", None)
         return content or "(The assistant returned empty content.)"
@@ -99,11 +99,7 @@ async def query_pinecone_knowledge_base(query: str, assistant, memory_instance, 
         print(f"\n--- FATAL ERROR in Pinecone Tool ---\n{error_details}\n--- END OF ERROR ---\n")
         return f"An error occurred:\n\n```\n{error_details}\n```"
 
-# --- Synchronous wrapper for the async tool ---
-def run_query_in_sync(query):
-    return asyncio.run(query_pinecone_knowledge_base(query, assistant=pinecone_assistant, memory_instance=memory, thread_config=THREAD_CONFIG))
-
-# --- Agent and Tool Initialization ---
+# --- Initialize Agent & Tools ---
 @st.cache_resource(ttl=3600)
 def initialize_agent_and_tools():
     print("--- Initializing agent and all tools ---")
@@ -118,7 +114,7 @@ def initialize_agent_and_tools():
 
         pinecone_tool = Tool(
             name="get_product_and_knowledge_info",
-            func=run_query_in_sync,
+            func=partial(query_pinecone_knowledge_base, assistant=pinecone_assistant, memory_instance=memory, thread_config=THREAD_CONFIG),
             description="Use for any questions about products, ingredients, recipes, or company knowledge."
         )
         all_tools.append(pinecone_tool)
@@ -144,11 +140,10 @@ def initialize_agent_and_tools():
     print("--- ✅ Agent is ready ---")
     return agent_executor, memory
 
+# --- System Prompt ---
+SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. Provide clear and useful answers about ingredients, products, sourcing, or food tech."""
 
-# --- Static System Prompt ---
-SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. Provide detailed yet clear answers about ingredients, products, sourcing, and food technology. Use the provided tools to get relevant data."""
-
-# --- App Logic ---
+# --- Chat Submission Logic ---
 def handle_submission(query):
     st.session_state.messages.append({"role": "user", "content": query})
     st.session_state.query_to_process = query
@@ -185,7 +180,7 @@ if "is_thinking" not in st.session_state:
 if "query_to_process" not in st.session_state:
     st.session_state.query_to_process = None
 
-# Chat History
+# --- Render Chat History ---
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -202,5 +197,5 @@ if user_prompt:
     handle_submission(user_prompt)
     st.rerun()
 
-# Optional sidebar utilities can go here
+# --- Sidebar (optional) ---
 st.sidebar.markdown("---")

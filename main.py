@@ -68,47 +68,64 @@ def initialize_agent_and_tools():
     """
     Creates the agent, its tools, and the memory system. This is the new core.
     """
+    print("--- Initializing agent and all tools ---")
+    all_tools = []
+
     # 1. Initialize the Pinecone Assistant (as a resource for our tool)
     try:
+        print("Initializing Pinecone Assistant...")
         pc = Pinecone(api_key=PINECONE_API_KEY)
         pinecone_assistant = pc.assistant.Assistant(assistant_name=ASSISTANT_NAME)
+        
+        # Create the Pinecone Knowledge Tool and add it to our list
+        pinecone_tool = Tool(
+            name="get_product_and_knowledge_info",
+            func=partial(
+                query_pinecone_knowledge_base,
+                assistant=pinecone_assistant,
+                memory_instance=st.session_state.memory, # Get memory from session state
+                thread_config={"configurable": {"thread_id": THREAD_ID}}
+            ),
+            description="Use for any questions about products, ingredients, recipes, or company knowledge."
+        )
+        all_tools.append(pinecone_tool)
+        print("✅ Pinecone tool loaded successfully.")
+
     except Exception as e:
         st.error(f"Fatal Error: Could not initialize Pinecone Assistant: {e}")
+        # We stop here because the primary tool failed
         st.stop()
 
-    # 2. Initialize the agent's brain and memory
-    llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0)
-    memory = MemorySaver()
-    thread_config = {"configurable": {"thread_id": THREAD_ID}}
 
-    # 3. Create the Pinecone Knowledge Tool
-    pinecone_tool = Tool(
-        name="get_product_and_knowledge_info",
-        func=partial(
-            query_pinecone_knowledge_base,
-            assistant=pinecone_assistant,
-            memory_instance=memory,
-            thread_config=thread_config
-        ),
-        description="Use for any questions about products, ingredients, recipes, or company knowledge."
-    )
-
-    # 4. Fetch the WooCommerce Tools
-    async def get_mcp_tools():
+    # 2. Fetch the WooCommerce Tools (with robust error handling)
+    print("Initializing WooCommerce tools...")
+    if MCP_PIPEDREAM_URL: # Only try if the URL is set
         try:
-            # --- THIS IS THE FIXED LINE ---
-            # I removed the confusing ", transport": "sse" part
-            mcp_client = MultiServerMCPClient({"pipedream": {"url": MCP_PIPEDREAM_URL}})
-            return await mcp_client.get_tools()
+            # This is the correct structure. The error is likely due to the URL/server.
+            mcp_client = MultiServerMCPClient(
+                {"pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}}
+            )
+            woocommerce_tools = asyncio.run(mcp_client.get_tools())
+            all_tools.extend(woocommerce_tools)
+            print(f"✅ WooCommerce tools loaded successfully. ({len(woocommerce_tools)} tools found)")
         except Exception as e:
-            # The error message you saw came from here
-            st.warning(f"Could not load WooCommerce tools: {e}. Proceeding without them.")
-            return []
-    woocommerce_tools = asyncio.run(get_mcp_tools())
+            # Catch the error and print a clear warning, but don't crash
+            st.warning(f"Could not load WooCommerce tools. The agent will work for product questions but not for e-commerce tasks. Error: {e}")
+            print(f"⚠️ Could not load WooCommerce tools. Error: {e}")
+    else:
+        st.warning("WooCommerce URL is not configured. The agent will only answer product questions.")
+        print("⚠️ WooCommerce URL not configured. Skipping.")
 
-    # 5. Create the agent with its complete list of tools
-    all_tools = [pinecone_tool] + woocommerce_tools
-    agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
+
+    # 3. Initialize the agent's brain and memory
+    print("Initializing the agent with available tools...")
+    llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0)
+    # The memory is now initialized here and stored in the session state
+    st.session_state.memory = MemorySaver()
+    
+    # 4. Create the agent with whatever tools were successfully loaded
+    agent_executor = create_react_agent(llm, all_tools, checkpointer=st.session_state.memory)
+    print("--- ✅ Agent is ready ---")
 
     return agent_executor
 

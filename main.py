@@ -71,37 +71,39 @@ def initialize_agent_and_tools():
     print("--- Initializing agent and all tools ---")
     all_tools = []
 
-    # 1. Initialize the Pinecone Assistant (as a resource for our tool)
+    # 1. Initialize the agent's memory FIRST.
+    #    This is the crucial change. The memory must exist before any tools that use it.
+    print("Initializing agent memory...")
+    memory = MemorySaver()
+    thread_config = {"configurable": {"thread_id": THREAD_ID}}
+
+    # 2. Now that memory exists, create the Pinecone Tool.
+    print("Initializing Pinecone Assistant...")
     try:
-        print("Initializing Pinecone Assistant...")
         pc = Pinecone(api_key=PINECONE_API_KEY)
         pinecone_assistant = pc.assistant.Assistant(assistant_name=ASSISTANT_NAME)
         
-        # Create the Pinecone Knowledge Tool and add it to our list
+        # We pass the 'memory' variable we just created.
         pinecone_tool = Tool(
             name="get_product_and_knowledge_info",
             func=partial(
                 query_pinecone_knowledge_base,
                 assistant=pinecone_assistant,
-                memory_instance=st.session_state.memory, # Get memory from session state
-                thread_config={"configurable": {"thread_id": THREAD_ID}}
+                memory_instance=memory, # Use the local memory variable
+                thread_config=thread_config
             ),
             description="Use for any questions about products, ingredients, recipes, or company knowledge."
         )
         all_tools.append(pinecone_tool)
         print("✅ Pinecone tool loaded successfully.")
-
     except Exception as e:
         st.error(f"Fatal Error: Could not initialize Pinecone Assistant: {e}")
-        # We stop here because the primary tool failed
         st.stop()
 
-
-    # 2. Fetch the WooCommerce Tools (with robust error handling)
+    # 3. Fetch the WooCommerce Tools (with robust error handling).
     print("Initializing WooCommerce tools...")
-    if MCP_PIPEDREAM_URL: # Only try if the URL is set
+    if MCP_PIPEDREAM_URL:
         try:
-            # This is the correct structure. The error is likely due to the URL/server.
             mcp_client = MultiServerMCPClient(
                 {"pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}}
             )
@@ -109,24 +111,18 @@ def initialize_agent_and_tools():
             all_tools.extend(woocommerce_tools)
             print(f"✅ WooCommerce tools loaded successfully. ({len(woocommerce_tools)} tools found)")
         except Exception as e:
-            # Catch the error and print a clear warning, but don't crash
             st.warning(f"Could not load WooCommerce tools. The agent will work for product questions but not for e-commerce tasks. Error: {e}")
             print(f"⚠️ Could not load WooCommerce tools. Error: {e}")
     else:
         st.warning("WooCommerce URL is not configured. The agent will only answer product questions.")
         print("⚠️ WooCommerce URL not configured. Skipping.")
 
-
-    # 3. Initialize the agent's brain and memory
+    # 4. Create the agent with all available tools and the memory checkpointer.
     print("Initializing the agent with available tools...")
     llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0)
-    # The memory is now initialized here and stored in the session state
-    st.session_state.memory = MemorySaver()
+    agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
     
-    # 4. Create the agent with whatever tools were successfully loaded
-    agent_executor = create_react_agent(llm, all_tools, checkpointer=st.session_state.memory)
     print("--- ✅ Agent is ready ---")
-
     return agent_executor
 
 # --- System Prompt: The Agent's Core Instructions ---

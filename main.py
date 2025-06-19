@@ -70,7 +70,7 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
 # This function now accepts the client as an argument.
 def _query_pinecone_assistant_with_client(query: str, client) -> str: # <-- CORRECTED THIS LINE
     """
-    Use this tool to get information about 1-2-Taste products, ingredients, flavors, 
+    Use this tool to get information about 1-2-Taste products, services, ingredients, flavors, 
     recipes, applications, or any other topic related to the 1-2-Taste catalog. 
     This is the primary tool for all product-related questions.
     """
@@ -119,7 +119,7 @@ def get_agent_components():
     pinecone_assistant_tool = Tool(
         name="get_12taste_product_context",
         func=bound_query_func,
-        description="Use this tool to get information about 1-2-Taste products, ingredients, flavors, recipes, applications, or any other topic related to the 1-2-Taste catalog. This is the primary tool for all product-related questions."
+        description="Use this tool to get information about 1-2-Taste products, services, ingredients, flavors, recipes, applications, or any other topic related to the 1-2-Taste catalog or food and beverage industry. This is the primary tool for all product-related questions."
     )
 
     all_tools = [pinecone_assistant_tool] + woocommerce_tools
@@ -147,11 +147,12 @@ def get_system_prompt(agent_components):
 
 **Primary Directives:**
 1.  **Tool Prioritization:**
-    *   For any query about 1-2-Taste products, ingredients, recipes, or industry topics, you **MUST** use the `{pinecone_tool}` tool.
+    *   For any query about 1-2-Taste products, services, ingredients, recipes, or industry topics, you **MUST** use the `{pinecone_tool}` tool.
     *   For e-commerce tasks like orders or customer accounts, use the appropriate WooCommerce tool based on its description.
     *   For any other topic, you **MUST** politely decline, stating you specialize in 1-2-Taste topics.
 2.  **User-Facing Persona:**
     *   When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER reveal internal tool names.**
+    *   **Cite your sources.** When the `{pinecone_tool}` tool provides a source URL, you must include it in your response. If no URL is available from the tool, state that the info is from the 1-2-Taste catalog.
 
 Answer the user's latest query based on these core directives and the conversation history.
 """

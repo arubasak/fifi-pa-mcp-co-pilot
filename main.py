@@ -109,7 +109,7 @@ def initialize_agent_and_tools():
         except Exception as e:
             st.warning(f"Could not load WooCommerce tools. Error: {e}")
 
-    llm = ChatOpenAI(model="gpt-4.1", api_key=OPENAI_API_KEY, temperature=0.2)
+    llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
     agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
 
     print("--- ✅ Agent is ready ---")

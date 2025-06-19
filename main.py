@@ -196,11 +196,21 @@ if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     st.rerun()
 
 if st.session_state.messages:
-    chat_export_data_txt = "\n\n".join([f"{msg.get('role', 'Unknown').capitalize()}: {msg.get('content', '')}" for msg in st.session_state.messages])
+    try:
+        chat_export_data_txt = "\n\n".join([
+            f"{str(msg.get('role', 'Unknown')).capitalize()}: {str(msg.get('content', ''))}"
+            for msg in st.session_state.messages
+        ])
+    except Exception:
+        chat_export_data_txt = "Chat export failed due to an encoding issue."
+
     current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     st.sidebar.download_button(
-        label="\ud83d\udcc5 Download Chat (TXT)", data=chat_export_data_txt,
-        file_name=f"fifi_chat_{current_time}.txt", mime="text/plain", use_container_width=True
+        label="📥 Download Chat (TXT)",
+        data=chat_export_data_txt,
+        file_name=f"fifi_chat_{current_time}.txt",
+        mime="text/plain",
+        use_container_width=True
     )
 
 for message in st.session_state.messages:

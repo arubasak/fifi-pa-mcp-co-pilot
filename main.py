@@ -9,16 +9,18 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
+from langchain_core.messages import HumanMessage, AIMessage
 
 # --- Imports for the Pinecone Assistant Tool ---
 from pinecone import Pinecone
 from pinecone_plugins.assistant.models.chat import Message
 from pinecone_plugins.assistant.control.core.client.exceptions import PineconeApiException
 
-# --- Constants for History Pruning ---
+# --- Constants ---
 MAX_HISTORY_TOKENS = 90000
-MESSAGES_TO_KEEP_AFTER_PRUNING = 6
+MESSAGES_TO_KEEP_AFTER_PRUNING = 10
 TOKEN_MODEL_ENCODING = "cl100k_base"
+THREAD_ID = "fifi_streamlit_v3"
 
 # --- Load environment variables from secrets ---
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
@@ -30,68 +32,48 @@ if not all([OPENAI_API_KEY, MCP_PIPEDREAM_URL, PINECONE_PLUGIN_API_KEY]):
     st.error("One or more critical secrets are missing (OpenAI, Pipedream, Pinecone Plugin).")
     st.stop()
 
-llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
-THREAD_ID = "fifi_streamlit_session"
+# --- LLM for the LangGraph Agent ---
+# This LLM's primary job is to decide which tool to use.
+llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0)
 
-# --- Helper Functions (Unchanged) ---
-def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    if not messages: return 0
-    try: encoding = tiktoken.get_encoding(model_encoding)
-    except Exception: encoding = tiktoken.get_encoding("cl100k_base")
-    num_tokens = 0
-    for message in messages:
-        num_tokens += 4
-        for key, value in message.items():
-            if value is not None:
-                try: num_tokens += len(encoding.encode(str(value)))
-                except TypeError: pass
-    num_tokens += 2
-    return num_tokens
 
-def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, current_system_prompt_content: str, max_tokens: int, keep_last_n_interactions: int):
-    checkpoint_value = memory_instance.get(thread_config)
-    if not checkpoint_value or "messages" not in checkpoint_value or not isinstance(checkpoint_value.get("messages"), list):
-        return False
-    current_messages_in_history = checkpoint_value["messages"]
-    if not current_messages_in_history: return False
-    current_token_count = count_tokens(current_messages_in_history)
-    if current_token_count > max_tokens:
-        print(f"INFO: History token count ({current_token_count}) > max ({max_tokens}). Pruning...")
-        user_assistant_messages = [m for m in current_messages_in_history if m.get("role") != "system"]
-        pruned_user_assistant_messages = user_assistant_messages[-keep_last_n_interactions:]
-        new_history_messages = [{"role": "system", "content": current_system_prompt_content}]
-        new_history_messages.extend(pruned_user_assistant_messages)
-        memory_instance.put(thread_config, {"messages": new_history_messages})
-        print(f"INFO: History pruned. New token count: {count_tokens(new_history_messages)}.")
-        return True
-    return False
-
-# --- Custom Tool Definition with Allulose Guardrail ---
-def _query_pinecone_assistant_with_client(query: str, client) -> str:
+# --- Custom Tool Definition for Pinecone Assistant SDK ---
+def _query_pinecone_assistant_with_client(query: str, client, memory_instance, thread_config: dict) -> str:
+    """
+    Use this tool for any questions about 1-2-Taste products, services, ingredients,
+    flavors, recipes, applications, or any other topic related to the 1-2-Taste catalog
+    or the food and beverage industry. This is your primary source of knowledge.
+    """
     try:
         if not client:
-            return "Error: Pinecone Assistant client was not provided to the tool."
+            return "Error: Pinecone Assistant client was not provided."
 
-        response_from_sdk = client.chat(messages=[Message(role="user", content=query)], model="gpt-4o") 
+        # 1. Get the conversational history from the LangGraph checkpointer.
+        checkpoint = memory_instance.get(thread_config)
+        history_messages = checkpoint.get("messages", []) if checkpoint else []
+
+        # 2. Convert LangChain messages to Pinecone SDK Message format.
+        #    The Pinecone SDK will handle its own context and memory.
+        sdk_messages = []
+        for msg in history_messages:
+            if isinstance(msg, HumanMessage):
+                sdk_messages.append(Message(role="user", content=msg.content))
+            elif isinstance(msg, AIMessage):
+                # Ensure we don't pass tool call information, only the content.
+                if isinstance(msg.content, str) and msg.content:
+                    sdk_messages.append(Message(role="assistant", content=msg.content))
         
-        response_text = ""
+        # Add the current user query as the latest message
+        sdk_messages.append(Message(role="user", content=query))
+        
+        # 3. Call the Pinecone Assistant with the full conversational history.
+        #    We let the SDK manage the context for its semantic search.
+        response_from_sdk = client.chat(messages=sdk_messages, model="gpt-4o")
+
         if hasattr(response_from_sdk, 'message') and hasattr(response_from_sdk.message, 'content'):
-            response_text = response_from_sdk.message.content or ""
-        else:
-            return "(Could not find content in the assistant's response.)"
+            return response_from_sdk.message.content or "(The assistant returned an empty content.)"
 
-        query_lower = query.lower()
-        if 'allulose' in query_lower and ('europe' in query_lower or 'efsa' in query_lower or 'approve' in query_lower):
-            print("INFO: Allulose regulatory guardrail triggered.")
-            corrected_response = "Allulose is not yet approved for use as a novel food in the European Union (EU) and the UK. Its regulatory status is still pending with authorities like EFSA."
-            
-            if "allsweet" in response_text.lower():
-                corrected_response += "\n\nWhile it awaits full approval, here is some information on available Allulose products for other regions or for R&D purposes:\n\n" + response_text
-            
-            return corrected_response
-
-        return response_text
-
+        return "(Could not find content in the assistant's response.)"
     except Exception as e:
         print(f"ERROR querying Pinecone Assistant tool: {e}")
         return f"An error occurred while trying to get product information: {str(e)}"
@@ -99,175 +81,123 @@ def _query_pinecone_assistant_with_client(query: str, client) -> str:
 # --- Agent Initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
-    print("@@@ get_agent_components: Populating cache by running initialization...")
-    
+    """Initializes all necessary components for the agent."""
+    print("@@@ Initializing agent components...")
+
     try:
         pc = Pinecone(api_key=PINECONE_PLUGIN_API_KEY)
         pinecone_assistant_client = pc.assistant.Assistant(assistant_name=PINECONE_ASSISTANT_NAME)
     except Exception as e:
-        print(f"@@@ FATAL ERROR initializing Pinecone Assistant client: {e}")
-        raise e 
+        st.error(f"FATAL ERROR: Could not initialize Pinecone Assistant client: {e}")
+        st.stop()
 
+    # The memory instance will be passed to our custom tool
+    memory = MemorySaver()
+
+    # Bind the client and memory to the tool function
+    bound_query_func = partial(
+        _query_pinecone_assistant_with_client,
+        client=pinecone_assistant_client,
+        memory_instance=memory,
+        thread_config={"configurable": {"thread_id": THREAD_ID}}
+    )
+
+    pinecone_tool = Tool(
+        name="get_12taste_knowledge",
+        func=bound_query_func,
+        description=(
+            "Use for questions about 1-2-Taste products, services, ingredients, recipes, or industry topics. "
+            "Pass the user's original question directly to this tool."
+        )
+    )
+
+    # Fetch other tools, e.g., WooCommerce
     async def get_mcp_tools():
         mcp_client = MultiServerMCPClient({"pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}})
         return await mcp_client.get_tools()
-    
-    woocommerce_tools = asyncio.run(get_mcp_tools())
 
-    bound_query_func = partial(_query_pinecone_assistant_with_client, client=pinecone_assistant_client)
-
-    pinecone_assistant_tool = Tool(
-        name="get_12taste_product_context",
-        func=bound_query_func,
-        description="Use this tool for all questions about 1-2-Taste products, services, ingredients, flavors, recipes, applications, regulatory status, or any topic related to the 1-2-Taste catalog or food and beverage industry."
-    )
-
-    all_tools = [pinecone_assistant_tool] + woocommerce_tools
-    memory = MemorySaver()
-    agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
-    all_tool_details = {tool.name: tool.description for tool in all_tools}
-    
-    print("@@@ get_agent_components: Initialization complete.")
-    return {
-        "agent_executor": agent_executor,
-        "memory_instance": memory,
-        "pinecone_tool_name": pinecone_assistant_tool.name,
-        "all_tool_details_for_prompt": all_tool_details
-    }
-
-# --- Simplified System Prompt Definition ---
-def get_system_prompt(agent_components):
-    pinecone_tool = agent_components['pinecone_tool_name']
-    prompt = f"""You are FiFi, a specialized AI assistant for 1-2-Taste.
-
-**Primary Directives:**
-1.  **Tool Prioritization:**
-    *   For any query about 1-2-Taste products, services, ingredients, recipes, or industry topics, you **MUST** use the `{pinecone_tool}` tool.
-    *   **This includes creative requests like "help me with a recipe." In such cases, use the tool to find relevant ingredients and then use that information to provide recipe suggestions.**
-    *   For e-commerce tasks like orders or customer accounts, use the appropriate WooCommerce tool based on its description.
-    *   For any other topic, you **MUST** politely decline, stating you specialize in 1-2-Taste topics.
-2.  **User-Facing Persona:**
-    *   When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER reveal internal tool names.**
-    *   **Do not state product prices.** If asked, direct users to the product page or a sales contact.
-    *   **Cite your sources.** When the `{pinecone_tool}` tool provides a source URL, you must include it in your response. If no URL is available from the tool, state that the info is from the 1-2-Taste catalog.
-
-Answer the user's latest query based on these core directives and the conversation history.
-"""
-    return prompt
-
-# --- Async handler for user queries ---
-async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
-    assistant_reply = ""
     try:
-        agent_executor = agent_components["agent_executor"]
-        memory_instance = agent_components["memory_instance"]
-        
-        config = {"configurable": {"thread_id": THREAD_ID}}
-        system_prompt_content = get_system_prompt(agent_components)
-
-        prune_history_if_needed(
-            memory_instance, config, system_prompt_content,
-            MAX_HISTORY_TOKENS, MESSAGES_TO_KEEP_AFTER_PRUNING
-        )
-
-        current_turn_messages = [
-            {"role": "system", "content": system_prompt_content},
-            {"role": "user", "content": user_query}
-        ]
-        event = {"messages": current_turn_messages}
-        result = await agent_executor.ainvoke(event, config=config)
-
-        if isinstance(result, dict) and "messages" in result and result["messages"]:
-            assistant_reply = result["messages"][-1].content
-        else:
-            assistant_reply = f"(Error: Unexpected agent response format: {type(result)} - {result})"
-            st.error(f"Unexpected agent response: {result}")
-
+        woocommerce_tools = asyncio.run(get_mcp_tools())
     except Exception as e:
-        import traceback
-        st.error(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
-        assistant_reply = f"(Error: {e})"
+        st.warning(f"Could not load WooCommerce tools: {e}. Proceeding without them.")
+        woocommerce_tools = []
 
-    st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
-    st.session_state.thinking_for_ui = False
-    st.rerun()
 
-# --- Input Handling Function ---
-def handle_new_query_submission(query_text: str):
-    if not st.session_state.get('thinking_for_ui', False):
-        st.session_state.messages.append({"role": "user", "content": query_text})
-        st.session_state.query_to_process = query_text
-        st.session_state.thinking_for_ui = True
-        st.rerun()
+    all_tools = [pinecone_tool] + woocommerce_tools
 
-# --- Streamlit App Starts Here ---
-st.title("FiFi Co-Pilot 🚀 (LangGraph Hybrid Agent)")
+    # The agent's main job is now primarily routing to the correct tool.
+    agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
+    print("@@@ Agent components initialized successfully.")
+    return agent_executor, memory
 
-# --- Initialize UI-critical state BEFORE attempting agent initialization ---
-if "messages" not in st.session_state: st.session_state.messages = []
-if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
-if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
+# --- System Prompt ---
+SYSTEM_PROMPT = """You are FiFi, an AI assistant for 1-2-Taste.
+
+Your capabilities are divided into two areas:
+1.  **Product & Knowledge Expert**: For any query about 1-2-Taste products, services, ingredients, recipes, or industry topics, you **MUST** use the `get_12taste_knowledge` tool. This is your primary function.
+2.  **E-commerce Assistant**: For tasks related to customer orders, accounts, or shipping, use the appropriate WooCommerce tool based on its description.
+
+**NEVER** answer product or knowledge questions from your own general knowledge. Always use the `get_12taste_knowledge` tool.
+If a query is outside these two areas, politely state that you can only assist with 1-2-Taste topics.
+Do not reveal your internal tool names to the user.
+"""
+
+# --- Main App Logic ---
+st.title("FiFi Co-Pilot 🚀 (SDK-Integrated Agent)")
 
 try:
-    agent_components = get_agent_components()
-    st.session_state.components_loaded = True 
+    agent_executor, memory = get_agent_components()
+    st.session_state.components_loaded = True
 except Exception as e:
-    st.error(f"Failed to initialize agent components. The app cannot continue. Please refresh. Error: {e}")
-    print(f"@@@ CRITICAL FAILURE during get_agent_components(): {e}")
+    st.error(f"Failed to initialize agent components: {e}")
     st.session_state.components_loaded = False
-    st.stop() 
+    st.stop()
 
-# --- UI Rendering ---
-st.sidebar.markdown("## Quick Questions")
-preview_questions = ["Help me with my recipe for a new juice drink", "Suggest me some strawberry flavours for beverage", "I need vanilla flavours for ice-cream", "is allulose approved in Europe?"]
-for question in preview_questions:
-    if st.sidebar.button(question, key=f"preview_{question}", use_container_width=True):
-        handle_new_query_submission(question)
-
-st.sidebar.markdown("---")
-if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
+if "messages" not in st.session_state:
     st.session_state.messages = []
-    st.session_state.thinking_for_ui = False
-    st.session_state.query_to_process = None
-    
-    get_agent_components.clear() 
-    if "components_loaded" in st.session_state:
-        del st.session_state["components_loaded"]
-    
-    print("@@@ Chat history cleared, cache cleared.")
-    st.rerun()
 
-if st.session_state.messages:
-    # --- CORRECTED LINE HERE ---
-    chat_export_data_txt = "\n\n".join([f"{msg.get('role', 'Unknown').capitalize()}: {str(msg.get('content', ''))}" for msg in st.session_state.messages])
-    # --- END CORRECTION ---
-    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    st.sidebar.download_button(
-        label="📥 Download Chat (TXT)", data=chat_export_data_txt,
-        file_name=f"fifi_chat_{current_time}.txt", mime="text/plain", use_container_width=True
-    )
-st.sidebar.markdown("---")
-st.sidebar.info("💡 FiFi uses a hybrid agent for product info and e-commerce tasks!")
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(str(message.get("content", "")))
+async def get_agent_response(user_query: str):
+    """Invokes the agent and streams the response."""
+    st.session_state.messages.append({"role": "user", "content": user_query})
+    with st.chat_message("user"):
+        st.markdown(user_query)
 
-if st.session_state.get('thinking_for_ui', False):
     with st.chat_message("assistant"):
-        st.markdown("⌛ FiFi is thinking...")
+        message_placeholder = st.empty()
+        full_response = ""
 
-if st.session_state.get('thinking_for_ui', False) and st.session_state.get('query_to_process') is not None:
-    if st.session_state.get("components_loaded"):
-        query_to_run = st.session_state.query_to_process
-        st.session_state.query_to_process = None
-        asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
-    else:
-        st.error("Agent is not ready. Please refresh the page.")
-        st.session_state.thinking_for_ui = False
-        st.session_state.query_to_process = None
-        st.rerun()
+        try:
+            config = {"configurable": {"thread_id": THREAD_ID}}
+            
+            # The agent will now manage history in its checkpointer.
+            # We add the system prompt to every call to ensure it's respected.
+            event = {
+                "messages": [
+                    ("system", SYSTEM_PROMPT),
+                    ("user", user_query)
+                ]
+            }
+            
+            async for chunk in agent_executor.astream(event, config=config):
+                # The final response is in the 'messages' of the last chunk
+                if "messages" in chunk:
+                    last_message = chunk["messages"][-1]
+                    if last_message.content:
+                        full_response = last_message.content
+                        message_placeholder.markdown(full_response + "▌")
+            
+            message_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-user_prompt = st.chat_input("Ask FiFi Co-Pilot...", key="main_chat_input", disabled=not st.session_state.get("components_loaded", False))
-if user_prompt:
-    handle_new_query_submission(user_prompt)
+        except Exception as e:
+            error_message = f"Sorry, an error occurred: {e}"
+            st.error(error_message)
+            st.session_state.messages.append({"role": "assistant", "content": error_message})
+
+
+if user_prompt := st.chat_input("Ask FiFi about 1-2-Taste products...", disabled=not st.session_state.get("components_loaded")):
+    asyncio.run(get_agent_response(user_prompt))

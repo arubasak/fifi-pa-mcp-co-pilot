@@ -30,13 +30,11 @@ if not all([OPENAI_API_KEY, MCP_PIPEDREAM_URL, PINECONE_PLUGIN_API_KEY]):
     st.error("One or more critical secrets are missing (OpenAI, Pipedream, Pinecone Plugin).")
     st.stop()
 
-# --- LLM for the LangGraph Agent (Using gpt-4o for best reasoning) ---
 llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
 THREAD_ID = "fifi_streamlit_session"
 
 # --- Helper Functions (Unchanged) ---
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    # ... (function is unchanged) ...
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -51,7 +49,6 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     return num_tokens
 
 def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, current_system_prompt_content: str, max_tokens: int, keep_last_n_interactions: int):
-    # ... (function is unchanged) ...
     checkpoint_value = memory_instance.get(thread_config)
     if not checkpoint_value or "messages" not in checkpoint_value or not isinstance(checkpoint_value.get("messages"), list):
         return False
@@ -69,41 +66,22 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
         return True
     return False
 
-# --- Custom Tool Definition with Allulose Guardrail ---
+# --- Custom Tool Definition with Pure Query Passthrough ---
 def _query_pinecone_assistant_with_client(query: str, client) -> str:
     try:
         if not client:
             return "Error: Pinecone Assistant client was not provided to the tool."
 
-        # Send the clean query directly for best semantic search results
         sdk_message = Message(role="user", content=query)
         response_from_sdk = client.chat(messages=[sdk_message], model="gpt-4o") 
         
-        response_text = ""
         if hasattr(response_from_sdk, 'message') and hasattr(response_from_sdk.message, 'content'):
-            response_text = response_from_sdk.message.content or ""
-        else:
-            return "(Could not find content in the assistant's response.)"
-
-        # --- KEY CHANGE: ALLULOSE GUARDRAIL ---
-        # Check if the query is about Allulose and Europe/EFSA/approval
-        query_lower = query.lower()
-        if 'allulose' in query_lower and ('europe' in query_lower or 'efsa' in query_lower or 'approve' in query_lower):
-            print("INFO: Allulose regulatory guardrail triggered.")
-            # Start with the definitive, correct answer.
-            corrected_response = "Allulose is not yet approved for use as a novel food in the European Union (EU) and the UK. Its regulatory status is still pending with authorities like EFSA."
-            
-            # If the original response contained useful product info, append it.
-            if "allsweet" in response_text.lower():
-                # We add a transition phrase to make the combined response logical.
-                corrected_response += "\n\nWhile it awaits full approval, here is some information on available Allulose products for other regions or for R&D purposes:\n\n" + response_text
-            
-            return corrected_response
-        # --- END OF GUARDRAIL ---
-
-        # If the guardrail is not triggered, return the original response.
-        return response_text
-
+            response_text = response_from_sdk.message.content
+            if "unable to retrieve" in response_text.lower() or "i can help you with general information" in response_text.lower():
+                 return f"(The product assistant could not find specific information for the query: '{query}')"
+            return response_text or "(The assistant returned an empty content.)"
+        
+        return "(Could not find content in the assistant's response.)"
     except Exception as e:
         print(f"ERROR querying Pinecone Assistant tool: {e}")
         return f"An error occurred while trying to get product information: {str(e)}"
@@ -111,7 +89,7 @@ def _query_pinecone_assistant_with_client(query: str, client) -> str:
 # --- Agent Initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
-    print("@@@ get_agent_components: Populating cache...")
+    print("@@@ get_agent_components: Populating cache by running initialization...")
     
     try:
         pc = Pinecone(api_key=PINECONE_PLUGIN_API_KEY)
@@ -144,7 +122,8 @@ def get_agent_components():
         "agent_executor": agent_executor,
         "memory_instance": memory,
         "pinecone_tool_name": pinecone_assistant_tool.name,
-        "all_tool_details_for_prompt": all_tool_details
+        "all_tool_details_for_prompt": all_tool_details,
+        "pinecone_assistant_client": pinecone_assistant_client
     }
 
 # --- Simplified System Prompt Definition ---
@@ -169,7 +148,6 @@ Answer the user's latest query based on these core directives and the conversati
 
 # --- Async handler for user queries ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
-    # ... (function is unchanged) ...
     assistant_reply = ""
     try:
         agent_executor = agent_components["agent_executor"]
@@ -207,7 +185,6 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
-    # ... (function is unchanged) ...
     if not st.session_state.get('thinking_for_ui', False):
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
@@ -217,7 +194,14 @@ def handle_new_query_submission(query_text: str):
 # --- Streamlit App Starts Here ---
 st.title("FiFi Co-Pilot 🚀 (LangGraph Hybrid Agent)")
 
+# --- KEY FIX HERE: Initialize UI-critical state BEFORE attempting agent initialization ---
+if "messages" not in st.session_state: st.session_state.messages = []
+if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
+if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
+# --- END KEY FIX ---
+
 try:
+    # Get all agent components from the single cached, synchronous function
     agent_components = get_agent_components()
     st.session_state.components_loaded = True 
 except Exception as e:
@@ -235,7 +219,6 @@ for question in preview_questions:
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
-    # ... (function is unchanged) ...
     st.session_state.messages = []
     st.session_state.thinking_for_ui = False
     st.session_state.query_to_process = None
@@ -248,8 +231,7 @@ if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     st.rerun()
 
 if st.session_state.messages:
-    # ... (function is unchanged) ...
-    chat_export_data_txt = "\n\n".join([f"{msg.get('role', 'Unknown').capitalize()}: {msg.get('content', '')}" for msg in st.session_state.messages])
+    chat_export_data_txt = "\n\n".join([f"{msg.get('role', 'Unknown').capitalize()}: {str(msg.get('content', '')}" for msg in st.session_state.messages])
     current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     st.sidebar.download_button(
         label="📥 Download Chat (TXT)", data=chat_export_data_txt,

@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import asyncio
 import tiktoken
+from functools import partial # <-- Import partial for dependency injection
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -32,8 +33,8 @@ if not all([OPENAI_API_KEY, MCP_PIPEDREAM_URL, PINECONE_PLUGIN_API_KEY]):
 llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0.2)
 THREAD_ID = "fifi_streamlit_session"
 
+# --- Helper Functions (Unchanged) ---
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    # ... (function is unchanged) ...
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -48,7 +49,6 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     return num_tokens
 
 def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, current_system_prompt_content: str, max_tokens: int, keep_last_n_interactions: int):
-    # ... (function is unchanged) ...
     checkpoint_value = memory_instance.get(thread_config)
     if not checkpoint_value or "messages" not in checkpoint_value or not isinstance(checkpoint_value.get("messages"), list):
         return False
@@ -66,22 +66,20 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
         return True
     return False
 
-# --- Custom Tool Definition for Pinecone Assistant ---
-def query_pinecone_assistant(query: str) -> str:
-    # This function now correctly assumes the client is in session_state for this run
+# --- Custom Tool Definition with Dependency Injection ---
+# This function ACCEPTS the client as an argument. It does NOT use st.session_state.
+def _query_pinecone_assistant_with_client(query: str, client: Pinecone.Assistant) -> str:
     try:
-        pinecone_assistant_client = st.session_state.get("pinecone_assistant_client")
-        if not pinecone_assistant_client:
-            return "Error: Pinecone Assistant client could not be found in the current session."
+        if not client:
+            return "Error: Pinecone Assistant client was not provided to the tool."
 
         prompt_for_assistant = f'You are a product retrieval expert for 1-2-Taste. Use your knowledge base to find specific products, ingredients, or information that directly answers the following user query. Provide detailed and specific results.\n\nUser Query: "{query}"'
         sdk_message = Message(role="user", content=prompt_for_assistant)
-        response_from_sdk = pinecone_assistant_client.chat(messages=[sdk_message], model="gpt-4o")
+        response_from_sdk = client.chat(messages=[sdk_message], model="gpt-4o")
         
         if hasattr(response_from_sdk, 'message') and hasattr(response_from_sdk.message, 'content'):
             response_text = response_from_sdk.message.content
             if "unable to retrieve" in response_text.lower() or "i can help you with general information" in response_text.lower():
-                print(f"WARN: Pinecone Assistant gave a generic/failed response for query: '{query}'. Response: '{response_text}'")
                 return f"(The product assistant could not find specific information for the query: '{query}')"
             return response_text or "(The assistant returned an empty content.)"
         
@@ -90,10 +88,11 @@ def query_pinecone_assistant(query: str) -> str:
         print(f"ERROR querying Pinecone Assistant tool: {e}")
         return f"An error occurred while trying to get product information: {str(e)}"
 
-# --- Agent Initialization ---
+# --- Robust Agent Initialization ---
+# This is a SYNCHRONOUS function that Streamlit will cache.
 @st.cache_resource(ttl=3600)
 def get_agent_components():
-    print("@@@ get_agent_components: Populating cache by running the async initialization...")
+    print("@@@ get_agent_components: Populating cache by running initialization...")
     
     # Part 1: Initialize the SYNCHRONOUS Pinecone Assistant Client
     try:
@@ -104,16 +103,20 @@ def get_agent_components():
         raise e 
 
     # Part 2: Run the ASYNCHRONOUS part (getting MCP tools)
+    # This is safe because it runs exactly once inside the cached function.
     async def get_mcp_tools():
         mcp_client = MultiServerMCPClient({"pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}})
         return await mcp_client.get_tools()
     
     woocommerce_tools = asyncio.run(get_mcp_tools())
 
-    # Part 3: Combine Tools and Build Agent
+    # Part 3: Combine Tools and Build Agent using Dependency Injection
+    # We "bake" the initialized client into our tool's function.
+    bound_query_func = partial(_query_pinecone_assistant_with_client, client=pinecone_assistant_client)
+
     pinecone_assistant_tool = Tool(
         name="get_12taste_product_context",
-        func=query_pinecone_assistant,
+        func=bound_query_func, # Use the function with the client baked in
         description="Use this tool to get information about 1-2-Taste products, ingredients, flavors, recipes, applications, or any other topic related to the 1-2-Taste catalog. This is the primary tool for all product-related questions."
     )
 
@@ -122,11 +125,10 @@ def get_agent_components():
     agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
     all_tool_details = {tool.name: tool.description for tool in all_tools}
     
-    print("@@@ get_agent_components: Initialization complete.")
+    print("@@@ get_agent_components: Initialization complete. Resources are now cached.")
     return {
         "agent_executor": agent_executor,
         "memory_instance": memory,
-        "pinecone_assistant_client": pinecone_assistant_client, # <<< Return the client
         "pinecone_tool_name": pinecone_assistant_tool.name,
         "all_tool_details_for_prompt": all_tool_details
     }
@@ -142,12 +144,10 @@ def get_system_prompt(agent_components):
     prompt = f"""You are FiFi, a specialized AI assistant for 1-2-Taste.
 
 **Primary Directives:**
-
 1.  **Tool Prioritization:**
     *   For any query about 1-2-Taste products, ingredients, recipes, or industry topics, you **MUST** use the `{pinecone_tool}` tool.
     *   For e-commerce tasks like orders or customer accounts, use the appropriate WooCommerce tool based on its description.
     *   For any other topic, you **MUST** politely decline, stating you specialize in 1-2-Taste topics.
-
 2.  **User-Facing Persona:**
     *   When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER reveal internal tool names.**
     *   **Do not state product prices.** If asked, direct users to the product page or a sales contact.
@@ -206,17 +206,10 @@ def handle_new_query_submission(query_text: str):
 st.title("FiFi Co-Pilot 🚀 (LangGraph Hybrid Agent)")
 
 try:
-    # Get all agent components from the single cached, synchronous function
+    # This is now a simple, synchronous call.
+    # The first time, it runs the expensive init. Subsequent times, it's instant.
     agent_components = get_agent_components()
-    
-    # --- KEY FIX HERE ---
-    # Store the necessary components in session_state on EVERY run.
-    # This ensures that even on a rerun where the cache is hit,
-    # st.session_state is correctly populated for this session.
-    st.session_state.agent_components = agent_components
-    st.session_state.pinecone_assistant_client = agent_components["pinecone_assistant_client"]
-    st.session_state.components_loaded = True
-
+    st.session_state.components_loaded = True 
 except Exception as e:
     st.error(f"Failed to initialize agent components. The app cannot continue. Please refresh. Error: {e}")
     print(f"@@@ CRITICAL FAILURE during get_agent_components(): {e}")
@@ -237,10 +230,8 @@ if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     st.session_state.query_to_process = None
     
     get_agent_components.clear() 
-    # Clear session state keys that depend on the cached function
-    for key in ["components_loaded", "agent_components", "pinecone_assistant_client"]:
-        if key in st.session_state:
-            del st.session_state[key]
+    if "components_loaded" in st.session_state:
+        del st.session_state["components_loaded"]
     
     print("@@@ Chat history cleared, cache cleared.")
     st.rerun()
@@ -267,8 +258,7 @@ if st.session_state.get('thinking_for_ui', False) and st.session_state.get('quer
     if st.session_state.get("components_loaded"):
         query_to_run = st.session_state.query_to_process
         st.session_state.query_to_process = None
-        # Use the components stored in session state
-        asyncio.run(execute_agent_call_with_memory(query_to_run, st.session_state.agent_components))
+        asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
     else:
         st.error("Agent is not ready. Please refresh the page.")
         st.session_state.thinking_for_ui = False

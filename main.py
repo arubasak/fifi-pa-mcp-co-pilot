@@ -21,10 +21,8 @@ TOKEN_MODEL_ENCODING = "cl100k_base"
 
 # --- Load environment variables from secrets ---
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
-MCP_PINECONE_URL = st.secrets.get("MCP_PINECONE_URL") # Not used in this setup
-MCP_PINECONE_API_KEY = st.secrets.get("MCP_PINECONE_API_KEY") # Not used in this setup
 MCP_PIPEDREAM_URL = st.secrets.get("MCP_PIPEDREAM_URL")
-PINECONE_PLUGIN_API_KEY = st.secrets.get("PINECONE_API_KEY") # Assumes same key
+PINECONE_PLUGIN_API_KEY = st.secrets.get("PINECONE_API_KEY")
 PINECONE_ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME", "fifi")
 
 if not all([OPENAI_API_KEY, MCP_PIPEDREAM_URL, PINECONE_PLUGIN_API_KEY]):
@@ -35,6 +33,7 @@ llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0.2)
 THREAD_ID = "fifi_streamlit_session"
 
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
+    # ... (function is unchanged) ...
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -49,6 +48,7 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     return num_tokens
 
 def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, current_system_prompt_content: str, max_tokens: int, keep_last_n_interactions: int):
+    # ... (function is unchanged) ...
     checkpoint_value = memory_instance.get(thread_config)
     if not checkpoint_value or "messages" not in checkpoint_value or not isinstance(checkpoint_value.get("messages"), list):
         return False
@@ -68,16 +68,22 @@ def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict, c
 
 # --- Custom Tool Definition for Pinecone Assistant ---
 def query_pinecone_assistant(query: str) -> str:
+    # This function now correctly assumes the client is in session_state for this run
     try:
         pinecone_assistant_client = st.session_state.get("pinecone_assistant_client")
         if not pinecone_assistant_client:
-            return "Error: Pinecone Assistant client is not initialized."
+            return "Error: Pinecone Assistant client could not be found in the current session."
 
-        sdk_message = Message(role="user", content=query)
+        prompt_for_assistant = f'You are a product retrieval expert for 1-2-Taste. Use your knowledge base to find specific products, ingredients, or information that directly answers the following user query. Provide detailed and specific results.\n\nUser Query: "{query}"'
+        sdk_message = Message(role="user", content=prompt_for_assistant)
         response_from_sdk = pinecone_assistant_client.chat(messages=[sdk_message], model="gpt-4o")
         
         if hasattr(response_from_sdk, 'message') and hasattr(response_from_sdk.message, 'content'):
-            return response_from_sdk.message.content or "(The assistant returned an empty content.)"
+            response_text = response_from_sdk.message.content
+            if "unable to retrieve" in response_text.lower() or "i can help you with general information" in response_text.lower():
+                print(f"WARN: Pinecone Assistant gave a generic/failed response for query: '{query}'. Response: '{response_text}'")
+                return f"(The product assistant could not find specific information for the query: '{query}')"
+            return response_text or "(The assistant returned an empty content.)"
         
         return "(Could not find content in the assistant's response.)"
     except Exception as e:
@@ -93,7 +99,6 @@ def get_agent_components():
     try:
         pc = Pinecone(api_key=PINECONE_PLUGIN_API_KEY)
         pinecone_assistant_client = pc.assistant.Assistant(assistant_name=PINECONE_ASSISTANT_NAME)
-        st.session_state.pinecone_assistant_client = pinecone_assistant_client # Store for the tool function
     except Exception as e:
         print(f"@@@ FATAL ERROR initializing Pinecone Assistant client: {e}")
         raise e 
@@ -121,6 +126,7 @@ def get_agent_components():
     return {
         "agent_executor": agent_executor,
         "memory_instance": memory,
+        "pinecone_assistant_client": pinecone_assistant_client, # <<< Return the client
         "pinecone_tool_name": pinecone_assistant_tool.name,
         "all_tool_details_for_prompt": all_tool_details
     }
@@ -133,7 +139,6 @@ if 'query_to_process' not in st.session_state: st.session_state.query_to_process
 # --- Simplified System Prompt Definition ---
 def get_system_prompt(agent_components):
     pinecone_tool = agent_components['pinecone_tool_name']
-    
     prompt = f"""You are FiFi, a specialized AI assistant for 1-2-Taste.
 
 **Primary Directives:**
@@ -201,8 +206,17 @@ def handle_new_query_submission(query_text: str):
 st.title("FiFi Co-Pilot 🚀 (LangGraph Hybrid Agent)")
 
 try:
+    # Get all agent components from the single cached, synchronous function
     agent_components = get_agent_components()
+    
+    # --- KEY FIX HERE ---
+    # Store the necessary components in session_state on EVERY run.
+    # This ensures that even on a rerun where the cache is hit,
+    # st.session_state is correctly populated for this session.
+    st.session_state.agent_components = agent_components
+    st.session_state.pinecone_assistant_client = agent_components["pinecone_assistant_client"]
     st.session_state.components_loaded = True
+
 except Exception as e:
     st.error(f"Failed to initialize agent components. The app cannot continue. Please refresh. Error: {e}")
     print(f"@@@ CRITICAL FAILURE during get_agent_components(): {e}")
@@ -211,11 +225,7 @@ except Exception as e:
 
 # --- UI Rendering ---
 st.sidebar.markdown("## Quick Questions")
-preview_questions = [
-    "Help me with my recipe for a new juice drink",
-    "Suggest me some strawberry flavours for beverage",
-    "I need vanilla flavours for ice-cream"
-]
+preview_questions = ["Help me with my recipe for a new juice drink", "Suggest me some strawberry flavours for beverage", "I need vanilla flavours for ice-cream"]
 for question in preview_questions:
     if st.sidebar.button(question, key=f"preview_{question}", use_container_width=True):
         handle_new_query_submission(question)
@@ -227,10 +237,10 @@ if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     st.session_state.query_to_process = None
     
     get_agent_components.clear() 
-    if "components_loaded" in st.session_state:
-        del st.session_state["components_loaded"]
-    if "pinecone_assistant_client" in st.session_state:
-        del st.session_state["pinecone_assistant_client"]
+    # Clear session state keys that depend on the cached function
+    for key in ["components_loaded", "agent_components", "pinecone_assistant_client"]:
+        if key in st.session_state:
+            del st.session_state[key]
     
     print("@@@ Chat history cleared, cache cleared.")
     st.rerun()
@@ -257,7 +267,8 @@ if st.session_state.get('thinking_for_ui', False) and st.session_state.get('quer
     if st.session_state.get("components_loaded"):
         query_to_run = st.session_state.query_to_process
         st.session_state.query_to_process = None
-        asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
+        # Use the components stored in session state
+        asyncio.run(execute_agent_call_with_memory(query_to_run, st.session_state.agent_components))
     else:
         st.error("Agent is not ready. Please refresh the page.")
         st.session_state.thinking_for_ui = False

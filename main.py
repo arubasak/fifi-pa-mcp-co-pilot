@@ -31,7 +31,7 @@ try:
     PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
     PINECONE_ENVIRONMENT = st.secrets["PINECONE_REGION"]
     MCP_PIPEDREAM_URL = st.secrets.get("MCP_PIPEDREAM_URL")
-    ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME", "fifi")
+    ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME")
 except KeyError as e:
     st.error(f"Missing critical secret: {e}. The app cannot continue.")
     st.stop()

@@ -2,11 +2,10 @@ import streamlit as st
 import datetime
 import asyncio
 from functools import partial
-import tiktoken
 import traceback
 import nest_asyncio
 
-# Apply patch to allow nested event loops in Streamlit
+# Apply patch to allow nested event loops
 nest_asyncio.apply()
 
 # --- Core Imports ---
@@ -29,7 +28,7 @@ THREAD_CONFIG = {"configurable": {"thread_id": "fifi_final_v1"}}
 try:
     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
     PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-    PINECONE_ENVIRONMENT = st.secrets["PINECONE_REGION", "us"]
+    PINECONE_ENVIRONMENT = st.secrets["PINECONE_REGION"]
     MCP_PIPEDREAM_URL = st.secrets.get("MCP_PIPEDREAM_URL")
     ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME", "fifiv1")
 except KeyError as e:
@@ -38,51 +37,33 @@ except KeyError as e:
 
 # --- Memory Management (Unchanged) ---
 def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict):
-    # This function is fine as-is.
-    pass # Leaving the function definition for clarity, but it's not the issue.
+    pass 
 
-# --- Pinecone Tool Function (APPLIED FIX) ---
-def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread_config: dict) -> str:
+# --- Pinecone Tool Function (APPLIED FIX - RADICALLY SIMPLIFIED) ---
+def query_pinecone_knowledge_base(query: str, assistant) -> str:
     """
-    Queries the Pinecone Assistant. It first loads the conversation history,
-    then adds the current user query as the most recent message before sending.
+    Directly queries the Pinecone Assistant with a single, specific question.
+    It does not manage conversation history; it performs a direct lookup.
     """
-    checkpoint = memory_instance.get(thread_config)
-    history_messages = checkpoint.get("messages", []) if checkpoint else []
+    sdk_messages = [Message(role="user", content=query)]
+    
+    print(f"--- Sending direct query to Pinecone Assistant: '{query}' ---")
 
-    # 1. Load the past conversation history into Pinecone SDK format
-    sdk_messages = []
-    for msg in history_messages:
-        if isinstance(msg, (HumanMessage, AIMessage)):
-            sdk_messages.append(Message(role=msg.type, content=str(msg.content)))
-        elif isinstance(msg, dict) and msg.get("type") != "system":
-            sdk_messages.append(Message(role=msg.get("type"), content=str(msg.get("content"))))
-
-    # 2. THE FIX: Always add the current user's query as the last message.
-    # This guarantees the list is never empty and the assistant has the latest context.
-    sdk_messages.append(Message(role="user", content=query))
-
-    # 3. DEBUG: Print the messages being sent to the assistant for verification.
-    print("--- Sending a total of", len(sdk_messages), "messages to Pinecone Assistant ---")
-    for msg in sdk_messages:
-        print(f" - {msg.role}: {msg.content}")
-
-    # 4. Make the call to the assistant
     try:
         response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")
         content = getattr(getattr(response_from_sdk, "message", None), "content", None)
         return content or "I found no information on that topic in the knowledge base."
-
+    except PineconeApiException as e:
+        print(f"\n--- PINECONE API ERROR in Tool ---\n{e}\n--- END OF ERROR ---\n")
+        return f"Error: The knowledge base returned an API error: {e}"
     except Exception:
         error_details = traceback.format_exc()
         print(f"\n--- FATAL ERROR in Pinecone Tool ---\n{error_details}\n--- END OF ERROR ---\n")
         return "Error: The knowledge base connection failed. Please inform the user that you were unable to retrieve the information."
 
-
-# --- Initialize Agent & Tools (Unchanged) ---
+# --- Initialize Agent & Tools (UPDATED) ---
 @st.cache_resource(ttl=3600)
 def initialize_agent_and_tools():
-    # This function is fine as-is.
     print("--- Initializing agent and all tools ---")
     all_tools = []
     memory = MemorySaver()
@@ -90,9 +71,10 @@ def initialize_agent_and_tools():
     try:
         pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
         pinecone_assistant = pc.assistant.Assistant(assistant_name=ASSISTANT_NAME)
+        # The tool function is now simpler and no longer needs memory or thread_config
         pinecone_tool = Tool(
             name="get_product_and_knowledge_info",
-            func=partial(query_pinecone_knowledge_base, assistant=pinecone_assistant, memory_instance=memory, thread_config=THREAD_CONFIG),
+            func=partial(query_pinecone_knowledge_base, assistant=pinecone_assistant),
             description="Use for any questions about products, services, ingredients, recipes, or company knowledge."
         )
         all_tools.append(pinecone_tool)

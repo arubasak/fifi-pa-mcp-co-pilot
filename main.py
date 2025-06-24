@@ -35,7 +35,7 @@ THREAD_CONFIG = {"configurable": {"thread_id": "fifi_final_v1"}}
 try:
     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
     PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-    PINECONE_ENVIRONMENT = st.secrets["PINECONE_REGION"]
+    PINECONE_ENVIRONMENT = st.secrets["PINECONE_REGION", "us"]
     MCP_PIPEDREAM_URL = st.secrets.get("MCP_PIPEDREAM_URL")
     ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME", "fifiv1")
 except KeyError as e:

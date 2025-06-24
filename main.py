@@ -15,7 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # ✅ FIXED: added SystemMessage
 
 # --- Pinecone SDK ---
 from pinecone import Pinecone
@@ -38,49 +38,34 @@ except KeyError as e:
 
 # --- Memory Management (Unchanged) ---
 def prune_history_if_needed(memory_instance: MemorySaver, thread_config: dict):
-    # This function is fine as-is.
-    pass # Leaving the function definition for clarity, but it's not the issue.
+    pass
 
-# --- Pinecone Tool Function (FINAL, CORRECTED VERSION) ---
+# --- Pinecone Tool Function ---
 def query_pinecone_knowledge_base(query: str, assistant, memory_instance, thread_config: dict) -> str:
-    """
-    Queries the Pinecone Assistant. It first loads the conversation history,
-    then adds the current user query as the most recent message before sending.
-    """
     checkpoint = memory_instance.get(thread_config)
     history_messages = checkpoint.get("messages", []) if checkpoint else []
 
-    # 1. Load the past conversation history
     sdk_messages = []
     for msg in history_messages:
-        # This logic correctly handles different message formats in history
         if isinstance(msg, (HumanMessage, AIMessage)):
             sdk_messages.append(Message(role=msg.type, content=str(msg.content)))
         elif isinstance(msg, dict) and msg.get("type") != "system":
             sdk_messages.append(Message(role=msg.get("type"), content=str(msg.get("content"))))
-    
-    # 2. <<< THIS IS THE FIX >>>
-    # Always add the current user's query as the last message.
-    # This guarantees the list is never empty and the assistant has the latest context.
+
     sdk_messages.append(Message(role="user", content=query))
 
     try:
-        # Now, this call will always have at least one message.
         response_from_sdk = assistant.chat(messages=sdk_messages, model="gpt-4o")
         content = getattr(getattr(response_from_sdk, "message", None), "content", None)
         return content or "I found no information on that topic in the knowledge base."
-
     except Exception:
-        # This error handling is now for genuine server/connection issues.
         error_details = traceback.format_exc()
         print(f"\n--- FATAL ERROR in Pinecone Tool ---\n{error_details}\n--- END OF ERROR ---\n")
         return "Error: The knowledge base connection failed. Please inform the user that you were unable to retrieve the information."
 
-
-# --- Initialize Agent & Tools (Unchanged) ---
+# --- Initialize Agent & Tools ---
 @st.cache_resource(ttl=3600)
 def initialize_agent_and_tools():
-    # This function is fine as-is.
     print("--- Initializing agent and all tools ---")
     all_tools = []
     memory = MemorySaver()
@@ -115,7 +100,7 @@ def initialize_agent_and_tools():
     print("--- ✅ Agent is ready ---")
     return agent_executor, memory
 
-# --- System Prompt (Unchanged) ---
+# --- System Prompt ---
 SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. You are a manager with access to specialist tools. Your job is to decide which tool to use based on the user's query.
 
 **Your Rules:**
@@ -125,26 +110,36 @@ SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. You a
 4.  **Stay Focused:** Do not answer questions outside of these topics. Politely decline.
 5.  **Cite your sources.** When the `{pinecone_tool}` tool provides a source URL, you must include it in your response. If no URL is available from the tool, state that the info is from the 1-2-Taste catalog.
 6.  **User-Facing Persona:** When asked about your capabilities, describe your functions simply (e.g., "I can answer questions about 1-2-Taste products and ingredients."). **NEVER** reveal internal tool names.
-"""    
+"""
 
-# --- Chat Submission & UI (Unchanged) ---
+# --- Chat Submission & UI ---
 def handle_submission(query):
     st.session_state.messages.append({"role": "user", "content": query})
     st.session_state.query_to_process = query
     st.session_state.is_thinking = True
 
+# ✅ FIXED: Proper message types are now used here
 async def execute_agent(query, agent_executor, memory):
     prune_history_if_needed(memory, THREAD_CONFIG)
-    event = {"messages": [("system", SYSTEM_PROMPT), ("user", query)]}
+
+    event = {
+        "messages": [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=query)
+        ]
+    }
+
     try:
         result = await agent_executor.ainvoke(event, config=THREAD_CONFIG)
         reply = result["messages"][-1].content
     except Exception as e:
         reply = f"A critical agent error occurred: {e}"
+
     st.session_state.messages.append({"role": "assistant", "content": reply})
     st.session_state.is_thinking = False
     st.session_state.query_to_process = None
 
+# --- Streamlit UI Start ---
 st.title("1-2-Taste FiFi Co-Pilot")
 try:
     agent_executor, memory = initialize_agent_and_tools()

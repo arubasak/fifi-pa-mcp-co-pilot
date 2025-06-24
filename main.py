@@ -1,10 +1,8 @@
 import streamlit as st
 import langchain
 
-# --- THIS IS THE MOST IMPORTANT CHANGE ---
-# Enable LangChain's debug mode to see the agent's internal thoughts.
+# Enable LangChain's debug mode
 langchain.debug = True
-# ----------------------------------------
 
 import datetime
 import asyncio
@@ -35,7 +33,9 @@ THREAD_CONFIG = {"configurable": {"thread_id": "fifi_final_v1"}}
 try:
     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
     PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-    PINECONE_ENVIRONMENT = st.secrets["PINECONE_REGION", "us"]
+    # --- CORRECTED LINE ---
+    # Use .get() to safely access the secret with a default value
+    PINECONE_ENVIRONMENT = st.secrets.get("PINECONE_REGION", "us") 
     MCP_PIPEDREAM_URL = st.secrets.get("MCP_PIPEDREAM_URL")
     ASSISTANT_NAME = st.secrets.get("PINECONE_ASSISTANT_NAME", "fifiv1")
 except KeyError as e:
@@ -55,7 +55,6 @@ def query_pinecone_knowledge_base(query: str, assistant) -> str:
         content = getattr(getattr(response_from_sdk, "message", None), "content", None)
         return content or "I found no information on that topic in the knowledge base."
     except Exception as e:
-        # The debug log will capture the full traceback, so we can keep this simpler.
         return f"Error: The knowledge base connection failed. Exception: {e}"
 
 # --- Initialize Agent & Tools (Unchanged) ---
@@ -91,7 +90,7 @@ def initialize_agent_and_tools():
     print("--- ✅ Agent is ready ---")
     return agent_executor, memory
 
-# --- System Prompt (REVISED FOR SIMPLICITY AND ACCURACY) ---
+# --- System Prompt (Using the improved version) ---
 SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. Your purpose is to be a precise interface to a set of internal tools.
 
 **Your Core Directives:**
@@ -100,7 +99,13 @@ SYSTEM_PROMPT = """You are FiFi, a specialized AI assistant for 1-2-Taste. Your 
     *   For questions about products, ingredients, recipes, or company knowledge, you **MUST** use the `get_product_and_knowledge_info` tool.
     *   For e-commerce tasks (orders, shipping), you **MUST** use the appropriate WooCommerce tool.
 
-2.  **Persona:**
+2.  **Response Generation (Absolute Rules):**
+    *   Your final answer **MUST** be a direct summary of the information provided by the tool.
+    *   **DO NOT** include any information, facts, or details from your own general knowledge.
+    *   **CRITICAL:** If the tool output does not explicitly provide a source URL, you **MUST NOT** invent, guess, or construct a URL. State that the information is from the 1-2-Taste knowledge base and do not provide a link.
+    *   If a tool returns an error or "no information," you must state that and nothing more.
+
+3.  **Persona:**
     *   You are a professional assistant.
     *   **NEVER** reveal your internal tool names (e.g., `get_product_and_knowledge_info`).
 """

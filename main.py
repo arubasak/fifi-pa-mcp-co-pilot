@@ -253,7 +253,7 @@ for message in st.session_state.get("messages", []):
     # Check the role of the message
     if message["role"] == "assistant":
         # Use your custom avatar for the assistant
-        # IMPORTANT: Replace "assets/fifi_icon.png" with the actual path to your image file.
+        # IMPORTANT: Replace "assets/fifi-avatar.png" with the actual path to your image file.
         with st.chat_message("assistant", avatar="assets/fifi_icon.png"):
             st.markdown(message.get("content", ""))
     else:

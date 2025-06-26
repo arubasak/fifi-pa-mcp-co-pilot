@@ -196,7 +196,6 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
-# NOTE: The st.set_page_config() call has been moved to the top of the file.
 st.markdown("""
 <style>
     /* This is the container for the chat input */
@@ -212,6 +211,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot 🚀</h1>", unsafe_allow_html=True)
 
+# ADDED: Subtitle text below the main title
+st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, receive real-time assistance with your orders and more.")
+
 if SECRETS_ARE_MISSING:
     st.error("Secrets missing. Please configure OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, and TAVILY_API_KEY.")
     st.stop()
@@ -221,7 +223,6 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
 if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
 if 'components_loaded' not in st.session_state: st.session_state.components_loaded = False
-# MODIFIED: Add a new state variable to track the active question
 if 'active_question' not in st.session_state: st.session_state.active_question = None
 
 try:
@@ -234,14 +235,11 @@ except Exception as e:
 
 # --- UI Rendering ---
 st.sidebar.markdown("## Quick questions")
-# MODIFIED: Restored the full list of preview questions
 preview_questions = [
     "Suggest some natural strawberry flavours for a beverage",
-    "I need vanilla flavours for ice-cream",
     "Latest trends in plant-based proteins for 2025?",
     "Get order status"
 ]
-# MODIFIED: Logic to highlight the active button
 for question in preview_questions:
     button_type = "primary" if st.session_state.active_question == question else "secondary"
     if st.sidebar.button(question, key=f"preview_{question}", use_container_width=True, type=button_type):
@@ -254,7 +252,6 @@ if st.sidebar.button("🧹 Reset chat session", use_container_width=True):
     st.session_state.thinking_for_ui = False
     st.session_state.query_to_process = None
     st.session_state.thread_id = f"fifi_streamlit_session_{uuid.uuid4()}"
-    # MODIFIED: Reset the active question
     st.session_state.active_question = None
     print(f"@@@ New chat session started. Thread ID: {st.session_state.thread_id}")
     st.rerun()
@@ -282,6 +279,5 @@ if st.session_state.get('query_to_process'):
 user_prompt = st.chat_input("I'm FiFi, your AI assistant for sourcing and product development. Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
                             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
 if user_prompt:
-    # MODIFIED: When user types, no button is active
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)

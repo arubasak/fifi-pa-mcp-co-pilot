@@ -254,7 +254,7 @@ for message in st.session_state.get("messages", []):
     if message["role"] == "assistant":
         # Use your custom avatar for the assistant
         # IMPORTANT: Replace "assets/fifi-avatar.png" with the actual path to your image file.
-        with st.chat_message("assistant", avatar="assets/fifi_icon.png"):
+        with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
             st.markdown(message.get("content", ""))
     else:
         # Use the default avatar for the user
@@ -263,7 +263,7 @@ for message in st.session_state.get("messages", []):
 
 if st.session_state.get('thinking_for_ui', False):
     # Use your custom avatar for the "thinking" message as well
-    with st.chat_message("assistant", avatar="assets/fifi_icon.png"):
+    with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
         st.markdown("⌛ FiFi is thinking...")
 
 # Process new queries

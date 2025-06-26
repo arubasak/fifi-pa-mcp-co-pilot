@@ -234,7 +234,7 @@ except Exception as e:
 # --- UI Rendering ---
 st.sidebar.markdown("## Quick questions")
 preview_questions = [
-    "Suggest some natural strawberry flavours for a beverage",
+    "Suggest some natural strawberry flavours for beverage",
     "Latest trends in plant-based proteins for 2025?",
     "What is my order status?"
 ]

@@ -37,7 +37,6 @@ if not SECRETS_ARE_MISSING:
 # --- Custom Tavily Fallback & General Search Tool ---
 @tool
 def tavily_search_fallback(query: str) -> str:
-    # This function is unchanged.
     """
     Search the web using Tavily. Use this as your first choice for queries about broader, public-knowledge topics like recent industry news, market trends, or general food science questions.
     """
@@ -58,7 +57,6 @@ def tavily_search_fallback(query: str) -> str:
 
 # --- System Prompt Definition (OPTIMIZED) ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
-    # This function is unchanged.
     if agent_components_for_prompt is None:
         agent_components_for_prompt = { 'pinecone_tool_name': "functions.get_context" }
     pinecone_tool = agent_components_for_prompt['pinecone_tool_name']
@@ -90,7 +88,6 @@ Based on the conversation history and these instructions, answer the user's last
 
 # --- Helper function to count tokens ---
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    # This function is unchanged.
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -111,16 +108,11 @@ async def summarize_history_if_needed(
     memory_instance: MemorySaver, thread_config: dict, main_system_prompt_content_str: str,
     summarize_threshold_tokens: int, keep_last_n_interactions: int, llm_for_summary: ChatOpenAI
 ):
-    # This function is mostly unchanged, except for the removal of the sidebar markdown.
     checkpoint = memory_instance.get(thread_config)
     current_stored_messages = checkpoint.get("messages", []) if checkpoint else []
     cleaned_messages = [m for m in current_stored_messages if not (isinstance(m, SystemMessage) and m.content == main_system_prompt_content_str)]
     conversational_messages_only = cleaned_messages
     current_token_count = count_tokens(conversational_messages_only)
-    
-    # REMOVED: The "Conv. Tokens" display is no longer needed.
-    # st.sidebar.markdown(f"**Conv. Tokens:** `{current_token_count}` / `{summarize_threshold_tokens}`")
-
     if current_token_count > summarize_threshold_tokens:
         st.info(f"Summarization Triggered...")
         if len(conversational_messages_only) <= keep_last_n_interactions: return False
@@ -144,7 +136,6 @@ async def summarize_history_if_needed(
 # --- Async handler for agent initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
-    # This function is unchanged.
     async def run_async_initialization():
         print("@@@ ASYNC: Initializing resources...")
         client = MultiServerMCPClient({
@@ -164,7 +155,6 @@ def get_agent_components():
 
 # --- Async handler for user queries ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
-    # This function is unchanged.
     assistant_reply = ""
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
@@ -193,7 +183,6 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
-    # This function is unchanged.
     if not st.session_state.get('thinking_for_ui', False):
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
@@ -201,7 +190,7 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
-st.title("FiFi Co-Pilot 🚀") # Cleaned up the title slightly
+st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot 🚀</h1>", unsafe_allow_html=True)
 
 if SECRETS_ARE_MISSING:
     st.error("Secrets missing. Please configure OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, and TAVILY_API_KEY.")
@@ -222,13 +211,9 @@ except Exception as e:
     st.stop()
 
 # --- UI Rendering ---
-
-# REMOVED: The "Memory Debugger" and the horizontal rule below it are gone.
-# st.sidebar.markdown("## Memory Debugger")
-# st.sidebar.markdown("---")
-
 st.sidebar.markdown("## Quick Questions")
 preview_questions = [
+    "Help me with my recipe for a new juice drink",
     "Suggest some natural strawberry flavours for a beverage",
     "I need vanilla flavours for ice-cream",
     "Latest trends in plant-based proteins for 2025?",
@@ -247,21 +232,18 @@ if st.sidebar.button("🧹 New Chat Session", use_container_width=True):
     print(f"@@@ New chat session started. Thread ID: {st.session_state.thread_id}")
     st.rerun()
 
-# MODIFIED: Display chat messages with custom assistant avatar
+# Display chat messages with custom assistant avatar
 for message in st.session_state.get("messages", []):
-    # Check the role of the message
     if message["role"] == "assistant":
-        # Use your custom avatar for the assistant
-        # IMPORTANT: Replace "assets/fifi-avatar.png" with the actual path to your image file.
+        # MODIFIED: Use the correct avatar filename
         with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
             st.markdown(message.get("content", ""))
     else:
-        # Use the default avatar for the user
         with st.chat_message("user"):
             st.markdown(message.get("content", ""))
 
 if st.session_state.get('thinking_for_ui', False):
-    # Use your custom avatar for the "thinking" message as well
+    # MODIFIED: Use the correct avatar filename for the "thinking" message as well
     with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
         st.markdown("⌛ FiFi is thinking...")
 

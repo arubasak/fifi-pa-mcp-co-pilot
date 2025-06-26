@@ -54,7 +54,7 @@ def tavily_search_fallback(query: str) -> str:
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
-# --- System Prompt Definition (RESTORED) ---
+# --- System Prompt Definition ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
     if agent_components_for_prompt is None:
         agent_components_for_prompt = {
@@ -64,27 +64,21 @@ def get_system_prompt_content_string(agent_components_for_prompt=None):
                 "tavily_search_fallback": "Searches the web for fallback information."
             }
         }
-
     pinecone_tool = agent_components_for_prompt['pinecone_tool_name']
     all_tool_details = agent_components_for_prompt['all_tool_details_for_prompt']
-    
     prompt = f"""You are FiFi, an expert AI assistant for 1-2-Taste. Your **sole purpose** is to assist users with inquiries related to 1-2-Taste's products, the food and beverage ingredients industry, food science topics relevant to 1-2-Taste's offerings, B2B inquiries, recipe development support using 1-2-Taste ingredients, and specific e-commerce functions related to 1-2-Taste's WooCommerce platform.
-
 **Core Mission:**
 *   Provide accurate, **cited** information about 1-2-Taste's offerings using your product information capabilities.
 *   Assist with relevant e-commerce tasks if explicitly requested by the user.
 *   When your primary knowledge base doesn't have sufficient information, use the web search tool as a fallback to provide helpful information.
 *   Politely decline to answer questions that are outside of your designated scope.
-
 **Tool Usage Priority and Guidelines (Internal Instructions for You, the LLM):**
-
 1.  **Primary Product & Industry Information Tool (Internally known as `{pinecone_tool}`):**
     *   For ANY query that could relate to 1-2-Taste product details, ingredients, flavors, availability, specifications, recipes, applications, food industry trends relevant to 1-2-Taste, or any information found within the 1-2-Taste catalog or relevant to its business, you **MUST ALWAYS PRIORITIZE** using this specialized tool (internally, its name is `{pinecone_tool}`). Its description is: "{all_tool_details.get(pinecone_tool, 'Retrieves relevant document snippets from the assistant knowledge base.')}" This is your main and most reliable knowledge source for product-related questions.
     *   To manage token usage and control the amount of context returned, you MUST include the `top_k` and `snippet_size` parameters in your arguments. Use the following values:
         *   `top_k`: 5
         *   `snippet_size`: 1024
     *   For example, a correct tool call would look like: `get_context(query='some query about ingredients', top_k=5, snippet_size=1024)`
-
 2.  **Web Search Fallback Tool (Internally, `tavily_search_fallback`):**
     *   You should **ONLY** use the web search tool under the following conditions:
         a. The primary knowledge base tool (`{pinecone_tool}`) returns insufficient, irrelevant, or no useful information for a query that is still relevant to the food and beverage industry.
@@ -92,17 +86,14 @@ def get_system_prompt_content_string(agent_components_for_prompt=None):
         c. The user asks about general food science or industry topics that are relevant to 1-2-Taste but not specifically about 1-2-Taste's own products.
     *   **Decision Logic for Fallback:** Always try the primary tool first. If, and only if, the results are inadequate, then consider using the web search tool.
     *   **Do NOT use web search for:** Direct product inquiries that should be in your knowledge base, questions clearly outside your scope (e.g., celebrity gossip, sports), or when your primary tool has already provided a sufficient answer.
-
 3.  **E-commerce and Order Management Tools (Internally, WooCommerce tools):**
     *   You should **ONLY** use these tools if the user's query EXPLICITLY mentions "WooCommerce", "orders", "customer accounts", or other clear e-commerce tasks.
-
 **Response Guidelines & Output Format:**
 *   **Strict Inclusion Policy:** You **MUST ONLY** include products in your answer that have a verifiable `productURL` or `source_url` in the tool's output. If a product appears in the tool's context but lacks a URL, you **MUST ignore it.**
 *   **Mandatory Citations:** For every product you mention, you **MUST ALWAYS** cite the `productURL` or `source_url`.
 *   **Web Source Citation:** When using information from the web search tool, clearly state that the information is from a web search and cite the source URLs provided by the tool.
 *   **Pricing:** Do not provide product prices. Direct users to the product page, to contact sales, or to the quote request page for (QUOTE ONLY) products.
 *   If both your knowledge base and web search fail, politely explain that you could not find the information.
-
 Answer the user's last query based on these instructions and the conversation history."""
     return prompt
 
@@ -124,13 +115,11 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
 
 def prune_history(memory_instance: MemorySaver, thread_config: dict, threshold: int):
     checkpoint = memory_instance.get(thread_config)
-    if not checkpoint or "messages" not in checkpoint:
-        return
+    if not checkpoint or "messages" not in checkpoint: return
     messages = checkpoint.get("messages", [])
     modified = False
     for i in range(len(messages) - 1, -1, -1):
-        if isinstance(messages[i], AIMessage):
-            break
+        if isinstance(messages[i], AIMessage): break
         if isinstance(messages[i], ToolMessage) and len(str(messages[i].content)) > threshold:
             messages[i] = ToolMessage(content=f"[Context from tool call pruned. Length: {len(str(messages[i].content))}]", tool_call_id=messages[i].tool_call_id)
             modified = True
@@ -183,16 +172,13 @@ async def execute_agent_call_with_memory(user_query: str):
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
-
         prune_history(agent_components["memory_instance"], config, PRUNE_TOOL_MESSAGE_THRESHOLD_CHARS)
         await summarize_history_if_needed(agent_components["memory_instance"], config, main_system_prompt_content_str, SUMMARIZE_THRESHOLD_TOKENS, MESSAGES_TO_KEEP_AFTER_SUMMARIZATION, agent_components["llm_for_summary"])
-
         current_checkpoint = agent_components["memory_instance"].get(config)
         history_messages = current_checkpoint.get("messages", []) if current_checkpoint else []
         event_messages = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
         event = {"messages": event_messages}
         result = await agent_components["agent_executor"].ainvoke(event, config=config)
-        
         if isinstance(result, dict) and "messages" in result and result["messages"]:
             for msg in reversed(result["messages"]):
                 if isinstance(msg, AIMessage):
@@ -203,7 +189,6 @@ async def execute_agent_call_with_memory(user_query: str):
             assistant_reply = f"(Error: Unexpected agent response format)"
     except Exception as e:
         assistant_reply = f"(Error: {e})"
-
     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     st.session_state.thinking_for_ui = False
     st.rerun()
@@ -215,26 +200,30 @@ def handle_new_query_submission(query_text: str):
         st.session_state.thinking_for_ui = True
         st.rerun()
 
+# --- Streamlit App UI ---
 st.title("FiFi Co-Pilot 🚀")
 
 if SECRETS_ARE_MISSING:
     st.error("Secrets are missing. Please configure them in Streamlit secrets.")
     st.stop()
 
+# --- INITIALIZE SESSION STATE (Must be at the top) ---
 if "agent_components" not in st.session_state: st.session_state.agent_components = None
 if "messages" not in st.session_state: st.session_state.messages = []
 if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
 if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
 
+# --- AGENT INITIALIZATION (MOVED UP, Runs only once) ---
 try:
     if st.session_state.agent_components is None:
         st.session_state.agent_components = get_agent_components_cached()
-    st.success("Agent Initialized.")
+    # No need for an st.success message here anymore
 except Exception as e:
     st.error(f"Failed to initialize agent. Please refresh. Error: {e}")
     if "agent_components" in st.session_state: del st.session_state.agent_components
     st.stop()
 
+# --- SIDEBAR UI (Now safe to render) ---
 st.sidebar.markdown("## Memory Debugger")
 st.sidebar.markdown("---")
 st.sidebar.markdown("## Quick Questions")
@@ -245,6 +234,7 @@ for question in preview_questions:
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
+    # This check is now safe because agent_components is guaranteed to be initialized
     if st.session_state.agent_components:
         memory = st.session_state.agent_components.get("memory_instance")
         if memory:
@@ -255,6 +245,7 @@ if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     print("@@@ Chat history cleared.")
     st.rerun()
 
+# --- MAIN CHAT UI ---
 for message in st.session_state.get("messages", []):
     with st.chat_message(message["role"]):
         st.markdown(str(message.get("content", "")))

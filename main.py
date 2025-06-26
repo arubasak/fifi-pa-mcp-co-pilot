@@ -229,8 +229,7 @@ except Exception as e:
 st.sidebar.markdown("## Quick questions")
 # MODIFIED: Restored full list of preview questions for completeness
 preview_questions = [
-    "Help me with my recipe for a new juice drink",
-    "Suggest some natural strawberry flavours for a beverage",
+   "Suggest some natural strawberry flavours for a beverage",
     "I need vanilla flavours for ice-cream",
     "Latest trends in plant-based proteins for 2025?",
     "Get order status"
@@ -273,7 +272,7 @@ if st.session_state.get('query_to_process'):
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
 # Chat input
-user_prompt = st.chat_input("Ask FiFi Co-Pilot...", key="main_chat_input",
+user_prompt = st.chat_input("I'm FiFi, your AI assistant for sourcing and product development. Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
                             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
 if user_prompt:
     # MODIFIED: When user types, no button is active

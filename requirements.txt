@@ -1,5 +1,7 @@
 # Streamlit app
 streamlit==1.46.0
+tavily-python
+langchain-tavily
 
 fpdf2
 

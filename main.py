@@ -18,14 +18,12 @@ MESSAGES_TO_KEEP_AFTER_SUMMARIZATION = 12
 TOKEN_MODEL_ENCODING = "cl100k_base"
 
 # --- Load environment variables from secrets ---
-# For Streamlit Cloud, set these in the secrets management.
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 MCP_PINECONE_URL = os.environ.get("MCP_PINECONE_URL")
 MCP_PINECONE_API_KEY = os.environ.get("MCP_PINECONE_API_KEY")
 MCP_PIPEDREAM_URL = os.environ.get("MCP_PIPEDREAM_URL")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
-# A check at the top to ensure all keys are present before initializing objects
 SECRETS_ARE_MISSING = not all([OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, TAVILY_API_KEY])
 
 if not SECRETS_ARE_MISSING:
@@ -182,19 +180,18 @@ async def summarize_history_if_needed(
                 return False
     return False
 
-# --- Agent Initialization ---
+# --- Agent Initialization (DEBUGGING - PINECONE ONLY) ---
 async def run_async_initialization():
-    print("@@@ ASYNC run_async_initialization: Starting actual resource initialization...")
+    print("@@@ DEBUGGING: Initializing with PINECONE ONLY...")
+    # This client will ONLY try to connect to Pinecone.
     client = MultiServerMCPClient({
         "pinecone": {"url": MCP_PINECONE_URL, "transport": "sse", "headers": {"Authorization": f"Bearer {MCP_PINECONE_API_KEY}"}},
-        "pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}
+        # "pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"} # <-- Pipedream is temporarily disabled
     })
+    
     mcp_tools = await client.get_tools()
-    
     all_tools = list(mcp_tools) + [tavily_search_fallback]
-    
     memory = MemorySaver()
-    
     pinecone_tool_name = "functions.get_context"
     all_tool_details = {tool.name: tool.description for tool in all_tools}
 
@@ -218,7 +215,6 @@ def get_agent_components():
     print("@@@ get_agent_components: Populating cache by running the async initialization...")
     return asyncio.run(run_async_initialization())
 
-# --- Agent Execution ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
     assistant_reply = ""
     try:
@@ -269,7 +265,7 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App UI ---
-st.title("FiFi Co-Pilot 🚀 (Tavily Fallback Integrated)")
+st.title("FiFi Co-Pilot 🚀 (DEBUG - Pinecone ONLY)")
 
 if SECRETS_ARE_MISSING:
     st.error("One or more secrets are missing. Please configure OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, and TAVILY_API_KEY in Streamlit secrets.")
@@ -283,6 +279,7 @@ if 'components_loaded' not in st.session_state: st.session_state.components_load
 try:
     agent_components = get_agent_components()
     st.session_state.components_loaded = True
+    st.success("Agent Initialized Successfully!")
 except Exception as e:
     st.error(f"Failed to initialize agent. Please refresh. Error: {e}")
     st.session_state.components_loaded = False

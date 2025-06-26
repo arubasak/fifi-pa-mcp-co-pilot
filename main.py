@@ -233,7 +233,7 @@ preview_questions = [
     "Suggest some natural strawberry flavours for a beverage",
     "I need vanilla flavours for ice-cream",
     "Latest trends in plant-based proteins for 2025?",
-    "What is the status of my order?"
+    "Get order status"
 ]
 for question in preview_questions:
     if st.sidebar.button(question, key=f"preview_{question}", use_container_width=True):

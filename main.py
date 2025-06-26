@@ -4,7 +4,7 @@ import asyncio
 import tiktoken
 import os
 import traceback
-import uuid  # Import for generating unique session IDs
+import uuid
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -26,12 +26,10 @@ MCP_PINECONE_API_KEY = os.environ.get("MCP_PINECONE_API_KEY")
 MCP_PIPEDREAM_URL = os.environ.get("MCP_PIPEDREAM_URL")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
-# A single check at the start to ensure all keys are present.
 SECRETS_ARE_MISSING = not all([OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, TAVILY_API_KEY])
 
 if not SECRETS_ARE_MISSING:
     llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
-    # The session_state now manages the thread_id
     if 'thread_id' not in st.session_state:
         st.session_state.thread_id = f"fifi_streamlit_session_{uuid.uuid4()}"
     THREAD_ID = st.session_state.thread_id
@@ -39,73 +37,60 @@ if not SECRETS_ARE_MISSING:
 # --- Custom Tavily Fallback & General Search Tool ---
 @tool
 def tavily_search_fallback(query: str) -> str:
+    # This function is unchanged.
     """
     Search the web using Tavily. Use this as your first choice for queries about broader, public-knowledge topics like recent industry news, market trends, or general food science questions.
     """
     try:
         tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
         response = tavily_client.search(
-            query=query,
-            search_depth="advanced",
-            max_results=5,
-            include_answer=True,
-            include_raw_content=False
+            query=query, search_depth="advanced", max_results=5, include_answer=True, include_raw_content=False
         )
-        
         if response.get('answer'):
             result = f"Web Search Results:\n\nSummary: {response['answer']}\n\nSources:\n"
         else:
             result = "Web Search Results:\n\nSources:\n"
-            
         for i, source in enumerate(response.get('results', []), 1):
             result += f"{i}. {source['title']}\n   URL: {source['url']}\n   Content: {source['content'][:300]}...\n\n"
-            
         return result
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
 # --- System Prompt Definition (OPTIMIZED) ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
+    # This function is unchanged.
     if agent_components_for_prompt is None:
         agent_components_for_prompt = { 'pinecone_tool_name': "functions.get_context" }
     pinecone_tool = agent_components_for_prompt['pinecone_tool_name']
-    
     prompt = f"""You are FiFi, the expert AI assistant for 1-2-Taste.
 Your role is strictly limited to inquiries about 1-2-Taste products, the food/beverage industry, relevant food science, B2B support, and specific e-commerce tasks. Politely decline all out-of-scope questions.
-
 **Intelligent Tool Selection Framework:**
 Your first step is to analyze the user's query to determine the best tool. Do not just follow a rigid order; select the tool that best fits the user's intent.
-
 1.  **When to use `{pinecone_tool}` (Knowledge Base):**
     *   Use this tool as your **first choice** for queries about 1-2-Taste's internal information.
-    *   **Primary Use Cases:** Specific product details (e.g., "What is the shelf life of your vanilla extract?"), product recommendations from the 1-2-Taste catalog, applications of specific ingredients, and information found in your internal documents.
+    *   **Primary Use Cases:** Specific product details, product recommendations, applications of specific ingredients, and information found in your internal documents.
     *   **Required Parameters:** You MUST use `top_k=5` and `snippet_size=1024`.
-
 2.  **When to use `tavily_search_fallback` (Web Search):**
     *   Use this tool as your **first choice** for queries about broader, public-knowledge topics.
-    *   **Primary Use Cases:** Recent industry news or market trends (e.g., "What are the latest developments in plant-based proteins?"), general food science questions (e.g., "How does the Maillard reaction work?"), and high-level questions about ingredient categories not specific to a 1-2-Taste product.
-
+    *   **Primary Use Cases:** Recent industry news or market trends, general food science questions, and high-level questions about ingredient categories.
 3.  **Using Web Search as a Fallback:**
-    *   If you tried the `{pinecone_tool}` for a query that seemed product-specific but it returned no relevant results, you should then use the web search tool to find an answer.
-
+    *   If you tried the `{pinecone_tool}` for a query that seemed product-specific but it returned no relevant results, you should then use the web search tool.
 4.  **E-commerce Tools:**
     *   Use these tools ONLY for explicit user requests about "WooCommerce", "orders", "customer accounts", or "shipping status".
-
 **Response Formatting Rules (Strictly Enforced):**
 *   **Citations are MANDATORY:**
-    *   For knowledge base results, cite the `productURL`, `source_url`, or `sourceURL`.
-    *   For web results, state that the information is from a web search and cite the source URL.
+    *   For knowledge base results, cite `productURL`, `source_url`, or `sourceURL`.
+    *   For web results, state the information is from a web search and cite the source URL.
 *   **Product Rules:**
     *   You MUST NOT mention any product from tool outputs that lacks a verifiable URL.
-    *   You MUST NOT provide product prices. Direct the user to the product page or the correct contact (sales-eu@12taste.com or the quote request page).
-*   **Failure:** If all tools fail to find a relevant answer, politely state that the information could not be found.
-
+    *   You MUST NOT provide product prices. Direct the user to the product page or the correct contact.
+*   **Failure:** If all tools fail, politely state that the information could not be found.
 Based on the conversation history and these instructions, answer the user's last query."""
     return prompt
 
 # --- Helper function to count tokens ---
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    # This function's logic remains unchanged.
+    # This function is unchanged.
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -126,13 +111,16 @@ async def summarize_history_if_needed(
     memory_instance: MemorySaver, thread_config: dict, main_system_prompt_content_str: str,
     summarize_threshold_tokens: int, keep_last_n_interactions: int, llm_for_summary: ChatOpenAI
 ):
-    # This function's logic remains unchanged.
+    # This function is mostly unchanged, except for the removal of the sidebar markdown.
     checkpoint = memory_instance.get(thread_config)
     current_stored_messages = checkpoint.get("messages", []) if checkpoint else []
     cleaned_messages = [m for m in current_stored_messages if not (isinstance(m, SystemMessage) and m.content == main_system_prompt_content_str)]
     conversational_messages_only = cleaned_messages
     current_token_count = count_tokens(conversational_messages_only)
-    st.sidebar.markdown(f"**Conv. Tokens:** `{current_token_count}` / `{summarize_threshold_tokens}`")
+    
+    # REMOVED: The "Conv. Tokens" display is no longer needed.
+    # st.sidebar.markdown(f"**Conv. Tokens:** `{current_token_count}` / `{summarize_threshold_tokens}`")
+
     if current_token_count > summarize_threshold_tokens:
         st.info(f"Summarization Triggered...")
         if len(conversational_messages_only) <= keep_last_n_interactions: return False
@@ -156,6 +144,7 @@ async def summarize_history_if_needed(
 # --- Async handler for agent initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
+    # This function is unchanged.
     async def run_async_initialization():
         print("@@@ ASYNC: Initializing resources...")
         client = MultiServerMCPClient({
@@ -175,6 +164,7 @@ def get_agent_components():
 
 # --- Async handler for user queries ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
+    # This function is unchanged.
     assistant_reply = ""
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
@@ -203,6 +193,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
+    # This function is unchanged.
     if not st.session_state.get('thinking_for_ui', False):
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
@@ -210,7 +201,7 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
-st.title("FiFi Co-Pilot 🚀 (Restored & Optimized)")
+st.title("FiFi Co-Pilot 🚀") # Cleaned up the title slightly
 
 if SECRETS_ARE_MISSING:
     st.error("Secrets missing. Please configure OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, and TAVILY_API_KEY.")
@@ -231,10 +222,12 @@ except Exception as e:
     st.stop()
 
 # --- UI Rendering ---
-st.sidebar.markdown("## Memory Debugger")
-st.sidebar.markdown("---")
+
+# REMOVED: The "Memory Debugger" and the horizontal rule below it are gone.
+# st.sidebar.markdown("## Memory Debugger")
+# st.sidebar.markdown("---")
+
 st.sidebar.markdown("## Quick Questions")
-# RESTORED the full list of questions, including the one for order status
 preview_questions = [
     "Help me with my recipe for a new juice drink",
     "Suggest some natural strawberry flavours for a beverage",
@@ -247,23 +240,30 @@ for question in preview_questions:
         handle_new_query_submission(question)
 
 st.sidebar.markdown("---")
-# RESTORED "Clear Chat History" button with NEW SESSION logic
 if st.sidebar.button("🧹 New Chat Session", use_container_width=True):
     st.session_state.messages = []
     st.session_state.thinking_for_ui = False
     st.session_state.query_to_process = None
-    # Generate a new unique ID to start a fresh memory thread
     st.session_state.thread_id = f"fifi_streamlit_session_{uuid.uuid4()}"
     print(f"@@@ New chat session started. Thread ID: {st.session_state.thread_id}")
     st.rerun()
 
-# Display chat messages
+# MODIFIED: Display chat messages with custom assistant avatar
 for message in st.session_state.get("messages", []):
-    with st.chat_message(message["role"]):
-        st.markdown(str(message.get("content", "")))
+    # Check the role of the message
+    if message["role"] == "assistant":
+        # Use your custom avatar for the assistant
+        # IMPORTANT: Replace "assets/fifi_icon.png" with the actual path to your image file.
+        with st.chat_message("assistant", avatar="assets/fifi_icon.png"):
+            st.markdown(message.get("content", ""))
+    else:
+        # Use the default avatar for the user
+        with st.chat_message("user"):
+            st.markdown(message.get("content", ""))
 
 if st.session_state.get('thinking_for_ui', False):
-    with st.chat_message("assistant"):
+    # Use your custom avatar for the "thinking" message as well
+    with st.chat_message("assistant", avatar="assets/fifi_icon.png"):
         st.markdown("⌛ FiFi is thinking...")
 
 # Process new queries

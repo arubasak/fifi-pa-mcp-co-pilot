@@ -275,7 +275,7 @@ if st.session_state.get('query_to_process'):
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
 # Chat input
-user_prompt = st.chat_input("I'm FiFi, your AI assistant for sourcing and product development. Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
+user_prompt = st.chat_input("Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
                             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
 if user_prompt:
     st.session_state.active_question = None

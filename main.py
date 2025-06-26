@@ -228,7 +228,7 @@ except Exception as e:
 st.sidebar.markdown("## Memory Debugger")
 st.sidebar.markdown("---")
 st.sidebar.markdown("## Quick Questions")
-preview_questions = ["Help me with my recipe...", "Suggest strawberry flavours...", "I need vanilla flavours...", "Latest trends in plant-based proteins?"]
+preview_questions = ["Latest trends in plant-based proteins?", "Suggest natural strawberry flavours", "I need vanilla flavours for ice-cream", "Get Order Status"]
 for question in preview_questions:
     if st.sidebar.button(question, key=f"preview_{question}", use_container_width=True):
         handle_new_query_submission(question)

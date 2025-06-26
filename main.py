@@ -228,7 +228,7 @@ except Exception as e:
     st.stop()
 
 # --- UI Rendering ---
-st.sidebar.markdown("## Quick Questions")
+st.sidebar.markdown("## Quick questions")
 preview_questions = [
     "Suggest some natural strawberry flavours for a beverage",
     "I need vanilla flavours for ice-cream",
@@ -240,7 +240,7 @@ for question in preview_questions:
         handle_new_query_submission(question)
 
 st.sidebar.markdown("---")
-if st.sidebar.button("🧹 Reset Chat Session", use_container_width=True):
+if st.sidebar.button("🧹 Reset chat session", use_container_width=True):
     st.session_state.messages = []
     st.session_state.thinking_for_ui = False
     st.session_state.query_to_process = None

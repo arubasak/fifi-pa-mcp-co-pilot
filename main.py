@@ -165,7 +165,6 @@ async def manage_memory_with_summary(memory: MemorySaver, config: dict, llm_for_
             st.error(f"Could not summarize history: {e}")
             print(f"ERROR: History summarization failed: {traceback.format_exc()}")
 
-
 # --- Async handler for agent initialization ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
@@ -192,7 +191,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
         
-        # Call the new, smart memory manager before every agent invocation.
+        # Call our new, smart memory manager before every agent invocation.
         await manage_memory_with_summary(agent_components["memory_instance"], config, agent_components["llm_for_summary"])
 
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
@@ -268,6 +267,7 @@ except Exception as e:
 
 # --- UI Rendering ---
 st.sidebar.markdown("## Quick questions")
+# Restored full list of preview questions
 preview_questions = [
     "Suggest some natural strawberry flavours for a beverage",
     "Latest trends in plant-based proteins for 2025?",

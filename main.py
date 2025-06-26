@@ -11,6 +11,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from tavily import TavilyClient
 
 # --- Constants for History Summarization & Pruning ---
 SUMMARIZE_THRESHOLD_TOKENS = 6000
@@ -53,19 +54,59 @@ def tavily_search_fallback(query: str) -> str:
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
-# --- System Prompt Definition (Unchanged) ---
+# --- System Prompt Definition (RESTORED) ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
-    # Your full system prompt here...
-    # Using the one from previous versions
     if agent_components_for_prompt is None:
-        agent_components_for_prompt = { 'pinecone_tool_name': "functions.get_context", 'all_tool_details_for_prompt': {} }
+        agent_components_for_prompt = {
+            'pinecone_tool_name': "functions.get_context",
+            'all_tool_details_for_prompt': {
+                "functions.get_context": "Retrieves relevant document snippets from the assistant knowledge base.",
+                "tavily_search_fallback": "Searches the web for fallback information."
+            }
+        }
+
     pinecone_tool = agent_components_for_prompt['pinecone_tool_name']
     all_tool_details = agent_components_for_prompt['all_tool_details_for_prompt']
-    prompt = f"""You are FiFi, an expert AI assistant for 1-2-Taste... (Your full prompt text) ... Use the following values: `top_k`: 5, `snippet_size`: 1024 ..."""
+    
+    prompt = f"""You are FiFi, an expert AI assistant for 1-2-Taste. Your **sole purpose** is to assist users with inquiries related to 1-2-Taste's products, the food and beverage ingredients industry, food science topics relevant to 1-2-Taste's offerings, B2B inquiries, recipe development support using 1-2-Taste ingredients, and specific e-commerce functions related to 1-2-Taste's WooCommerce platform.
+
+**Core Mission:**
+*   Provide accurate, **cited** information about 1-2-Taste's offerings using your product information capabilities.
+*   Assist with relevant e-commerce tasks if explicitly requested by the user.
+*   When your primary knowledge base doesn't have sufficient information, use the web search tool as a fallback to provide helpful information.
+*   Politely decline to answer questions that are outside of your designated scope.
+
+**Tool Usage Priority and Guidelines (Internal Instructions for You, the LLM):**
+
+1.  **Primary Product & Industry Information Tool (Internally known as `{pinecone_tool}`):**
+    *   For ANY query that could relate to 1-2-Taste product details, ingredients, flavors, availability, specifications, recipes, applications, food industry trends relevant to 1-2-Taste, or any information found within the 1-2-Taste catalog or relevant to its business, you **MUST ALWAYS PRIORITIZE** using this specialized tool (internally, its name is `{pinecone_tool}`). Its description is: "{all_tool_details.get(pinecone_tool, 'Retrieves relevant document snippets from the assistant knowledge base.')}" This is your main and most reliable knowledge source for product-related questions.
+    *   To manage token usage and control the amount of context returned, you MUST include the `top_k` and `snippet_size` parameters in your arguments. Use the following values:
+        *   `top_k`: 5
+        *   `snippet_size`: 1024
+    *   For example, a correct tool call would look like: `get_context(query='some query about ingredients', top_k=5, snippet_size=1024)`
+
+2.  **Web Search Fallback Tool (Internally, `tavily_search_fallback`):**
+    *   You should **ONLY** use the web search tool under the following conditions:
+        a. The primary knowledge base tool (`{pinecone_tool}`) returns insufficient, irrelevant, or no useful information for a query that is still relevant to the food and beverage industry.
+        b. The user asks about recent industry trends, news, or developments that are unlikely to be in the static knowledge base.
+        c. The user asks about general food science or industry topics that are relevant to 1-2-Taste but not specifically about 1-2-Taste's own products.
+    *   **Decision Logic for Fallback:** Always try the primary tool first. If, and only if, the results are inadequate, then consider using the web search tool.
+    *   **Do NOT use web search for:** Direct product inquiries that should be in your knowledge base, questions clearly outside your scope (e.g., celebrity gossip, sports), or when your primary tool has already provided a sufficient answer.
+
+3.  **E-commerce and Order Management Tools (Internally, WooCommerce tools):**
+    *   You should **ONLY** use these tools if the user's query EXPLICITLY mentions "WooCommerce", "orders", "customer accounts", or other clear e-commerce tasks.
+
+**Response Guidelines & Output Format:**
+*   **Strict Inclusion Policy:** You **MUST ONLY** include products in your answer that have a verifiable `productURL` or `source_url` in the tool's output. If a product appears in the tool's context but lacks a URL, you **MUST ignore it.**
+*   **Mandatory Citations:** For every product you mention, you **MUST ALWAYS** cite the `productURL` or `source_url`.
+*   **Web Source Citation:** When using information from the web search tool, clearly state that the information is from a web search and cite the source URLs provided by the tool.
+*   **Pricing:** Do not provide product prices. Direct users to the product page, to contact sales, or to the quote request page for (QUOTE ONLY) products.
+*   If both your knowledge base and web search fail, politely explain that you could not find the information.
+
+Answer the user's last query based on these instructions and the conversation history."""
     return prompt
 
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    # Unchanged
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -81,39 +122,23 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     num_tokens += 2
     return num_tokens
 
-# --- NEW FUNCTION: Prunes large tool messages from history ---
 def prune_history(memory_instance: MemorySaver, thread_config: dict, threshold: int):
-    """
-    Checks the last few messages in the history and if a ToolMessage is found
-    that is larger than the threshold, it replaces it with a summary placeholder.
-    """
     checkpoint = memory_instance.get(thread_config)
     if not checkpoint or "messages" not in checkpoint:
         return
-
     messages = checkpoint.get("messages", [])
     modified = False
     for i in range(len(messages) - 1, -1, -1):
         if isinstance(messages[i], AIMessage):
-            # We've hit the previous AI message, stop here to avoid pruning something it needs
             break
         if isinstance(messages[i], ToolMessage) and len(str(messages[i].content)) > threshold:
-            messages[i] = ToolMessage(
-                content=f"[Context from tool call {messages[i].tool_call_id} pruned to save tokens]",
-                tool_call_id=messages[i].tool_call_id,
-            )
+            messages[i] = ToolMessage(content=f"[Context from tool call pruned. Length: {len(str(messages[i].content))}]", tool_call_id=messages[i].tool_call_id)
             modified = True
-    
     if modified:
         memory_instance.put(thread_config, {"messages": messages})
         print(f"INFO: Pruned oversized ToolMessage from memory for thread {thread_config['configurable']['thread_id']}")
 
-
-async def summarize_history_if_needed( # Unchanged
-    memory_instance: MemorySaver, thread_config: dict, main_system_prompt_content_str: str,
-    summarize_threshold_tokens: int, keep_last_n_interactions: int, llm_for_summary: ChatOpenAI
-):
-    # This function is unchanged
+async def summarize_history_if_needed(memory_instance: MemorySaver, thread_config: dict, main_system_prompt_content_str: str, summarize_threshold_tokens: int, keep_last_n_interactions: int, llm_for_summary: ChatOpenAI):
     checkpoint = memory_instance.get(thread_config)
     if not checkpoint: return False
     current_stored_messages = checkpoint.get("messages", [])
@@ -132,7 +157,6 @@ async def summarize_history_if_needed( # Unchanged
             return True
     return False
 
-# --- Agent Initialization (Unchanged) ---
 async def run_async_initialization():
     print("@@@ ASYNC run_async_initialization...")
     client = MultiServerMCPClient({
@@ -153,7 +177,6 @@ def get_agent_components_cached():
     print("@@@ Populating cache by running async initialization...")
     return asyncio.run(run_async_initialization())
 
-# --- Agent Execution Call (MODIFIED to call prune_history) ---
 async def execute_agent_call_with_memory(user_query: str):
     assistant_reply = ""
     agent_components = st.session_state.agent_components
@@ -161,7 +184,6 @@ async def execute_agent_call_with_memory(user_query: str):
         config = {"configurable": {"thread_id": THREAD_ID}}
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
 
-        # Prune and summarize history BEFORE the agent is called
         prune_history(agent_components["memory_instance"], config, PRUNE_TOOL_MESSAGE_THRESHOLD_CHARS)
         await summarize_history_if_needed(agent_components["memory_instance"], config, main_system_prompt_content_str, SUMMARIZE_THRESHOLD_TOKENS, MESSAGES_TO_KEEP_AFTER_SUMMARIZATION, agent_components["llm_for_summary"])
 
@@ -193,16 +215,13 @@ def handle_new_query_submission(query_text: str):
         st.session_state.thinking_for_ui = True
         st.rerun()
 
-# --- Streamlit App UI ---
 st.title("FiFi Co-Pilot 🚀")
 
 if SECRETS_ARE_MISSING:
     st.error("Secrets are missing. Please configure them in Streamlit secrets.")
     st.stop()
 
-# --- MODIFIED: Use session_state for agent components ---
-if "agent_components" not in st.session_state:
-    st.session_state.agent_components = None
+if "agent_components" not in st.session_state: st.session_state.agent_components = None
 if "messages" not in st.session_state: st.session_state.messages = []
 if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
 if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
@@ -213,8 +232,7 @@ try:
     st.success("Agent Initialized.")
 except Exception as e:
     st.error(f"Failed to initialize agent. Please refresh. Error: {e}")
-    if "agent_components" in st.session_state:
-        del st.session_state.agent_components
+    if "agent_components" in st.session_state: del st.session_state.agent_components
     st.stop()
 
 st.sidebar.markdown("## Memory Debugger")
@@ -226,7 +244,6 @@ for question in preview_questions:
         handle_new_query_submission(question)
 
 st.sidebar.markdown("---")
-# MODIFIED: Logic for clearing history now works reliably
 if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     if st.session_state.agent_components:
         memory = st.session_state.agent_components.get("memory_instance")

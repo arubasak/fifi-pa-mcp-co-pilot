@@ -14,6 +14,12 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, Tool
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
+# --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
+st.set_page_config(
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # --- Constants for History Summarization ---
 SUMMARIZE_THRESHOLD_TOKENS = 500
 MESSAGES_TO_KEEP_AFTER_SUMMARIZATION = 12
@@ -190,6 +196,7 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
+# NOTE: The st.set_page_config() call has been moved to the top of the file.
 st.markdown("""
 <style>
     /* This is the container for the chat input */
@@ -227,9 +234,9 @@ except Exception as e:
 
 # --- UI Rendering ---
 st.sidebar.markdown("## Quick questions")
-# MODIFIED: Restored full list of preview questions for completeness
+# MODIFIED: Restored the full list of preview questions
 preview_questions = [
-   "Suggest some natural strawberry flavours for a beverage",
+    "Suggest some natural strawberry flavours for a beverage",
     "I need vanilla flavours for ice-cream",
     "Latest trends in plant-based proteins for 2025?",
     "Get order status"

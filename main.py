@@ -11,42 +11,62 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 from tavily import TavilyClient
+# NEW: Import BaseModel and Field from Pydantic
+from pydantic import BaseModel, Field
 
-# --- Constants for History Summarization (ADJUSTED FOR PRODUCTION) ---
-SUMMARIZE_THRESHOLD_TOKENS = 6000  # <-- INCREASED: Summarize only when the history gets reasonably long.
-MESSAGES_TO_KEEP_AFTER_SUMMARIZATION = 4 # <-- DECREASED: Keep only the last 2 user/AI interactions raw.
+# --- Constants for History Summarization ---
+SUMMARIZE_THRESHOLD_TOKENS = 6000
+MESSAGES_TO_KEEP_AFTER_SUMMARIZATION = 4
 TOKEN_MODEL_ENCODING = "cl100k_base"
 
 # --- Load environment variables from secrets ---
-# ... (This section is unchanged)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 MCP_PINECONE_URL = os.environ.get("MCP_PINECONE_URL")
 MCP_PINECONE_API_KEY = os.environ.get("MCP_PINECONE_API_KEY")
 MCP_PIPEDREAM_URL = os.environ.get("MCP_PIPEDREAM_URL")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
+
 SECRETS_ARE_MISSING = not all([OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, TAVILY_API_KEY])
+
 if not SECRETS_ARE_MISSING:
     llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
     THREAD_ID = "fifi_streamlit_session"
 
-# --- Custom Tavily Fallback Tool (Unchanged) ---
-@tool
+# --- NEW: Define a Pydantic model for the tool's input schema ---
+class TavilySearchInput(BaseModel):
+    query: str = Field(description="The search query to pass to the Tavily search engine.")
+
+# --- UPDATED: Custom Tavily Fallback Tool with the explicit schema ---
+@tool(args_schema=TavilySearchInput)
 def tavily_search_fallback(query: str) -> str:
-    # ... (function is unchanged)
+    """
+    Search the web using Tavily when the knowledge base doesn't have sufficient information.
+    Use this as a fallback when the primary knowledge base search returns insufficient results for topics like recent industry trends or general food science questions.
+    """
     try:
         tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
-        response = tavily_client.search(query=query, search_depth="advanced", max_results=5, include_answer=True, include_raw_content=False)
+        # The 'query' argument is now accessed directly as it is passed by the decorator
+        response = tavily_client.search(
+            query=query,
+            search_depth="advanced",
+            max_results=5,
+            include_answer=True,
+            include_raw_content=False
+        )
+        
         if response.get('answer'):
             result = f"Web Search Results:\n\nSummary: {response['answer']}\n\nSources:\n"
         else:
             result = "Web Search Results:\n\nSources:\n"
+            
         for i, source in enumerate(response.get('results', []), 1):
             result += f"{i}. {source['title']}\n   URL: {source['url']}\n   Content: {source['content'][:300]}...\n\n"
+            
         return result
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
-# --- System Prompt Definition (ADJUSTED TO REDUCE TOOL OUTPUT) ---
+# --- System Prompt Definition (Unchanged) ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
     if agent_components_for_prompt is None:
         agent_components_for_prompt = {
@@ -57,7 +77,6 @@ def get_system_prompt_content_string(agent_components_for_prompt=None):
     pinecone_tool = agent_components_for_prompt['pinecone_tool_name']
     all_tool_details = agent_components_for_prompt['all_tool_details_for_prompt']
     
-    # The only change is in the "Tool Usage Priority" section below
     prompt = f"""You are FiFi, an expert AI assistant for 1-2-Taste. Your **sole purpose** is to assist users with inquiries related to 1-2-Taste's products, the food and beverage ingredients industry, food science topics relevant to 1-2-Taste's offerings, B2B inquiries, recipe development support using 1-2-Taste ingredients, and specific e-commerce functions related to 1-2-Taste's WooCommerce platform.
 
 **Core Mission:**

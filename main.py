@@ -180,12 +180,11 @@ async def summarize_history_if_needed(
                 return False
     return False
 
-# --- Agent Initialization (DEBUGGING - PIPEDREAM ONLY) ---
+# --- Agent Initialization (FINAL - Both services enabled) ---
 async def run_async_initialization():
-    print("@@@ DEBUGGING: Initializing with PIPEDREAM ONLY...")
-    # This client will ONLY try to connect to Pipedream.
+    print("@@@ ASYNC run_async_initialization: Starting actual resource initialization...")
     client = MultiServerMCPClient({
-        # "pinecone": {"url": MCP_PINECONE_URL, "transport": "sse", "headers": {"Authorization": f"Bearer {MCP_PINECONE_API_KEY}"}}, # <-- Pinecone is temporarily disabled
+        "pinecone": {"url": MCP_PINECONE_URL, "transport": "sse", "headers": {"Authorization": f"Bearer {MCP_PINECONE_API_KEY}"}},
         "pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}
     })
     
@@ -265,7 +264,7 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App UI ---
-st.title("FiFi Co-Pilot 🚀 (DEBUG - Pipedream ONLY)")
+st.title("FiFi Co-Pilot 🚀")
 
 if SECRETS_ARE_MISSING:
     st.error("One or more secrets are missing. Please configure OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, and TAVILY_API_KEY in Streamlit secrets.")

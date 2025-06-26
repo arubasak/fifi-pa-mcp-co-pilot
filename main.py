@@ -3,7 +3,7 @@ import datetime
 import asyncio
 import tiktoken
 import os
-import uuid  # NEW: Import for generating unique IDs
+import uuid
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -29,9 +29,6 @@ TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
 SECRETS_ARE_MISSING = not all([OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, TAVILY_API_KEY])
 
-# --- We no longer need a hardcoded THREAD_ID ---
-# THREAD_ID = "fifi_streamlit_session" <-- DELETED
-
 if not SECRETS_ARE_MISSING:
     llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.2)
 
@@ -55,9 +52,8 @@ def tavily_search_fallback(query: str) -> str:
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
-# --- System Prompt Definition (Unchanged) ---
+# --- System Prompt Definition (RESTORED TO FULL VERSION) ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
-    # This is the full, correct system prompt from the previous step
     if agent_components_for_prompt is None:
         agent_components_for_prompt = {
             'pinecone_tool_name': "functions.get_context",
@@ -68,7 +64,38 @@ def get_system_prompt_content_string(agent_components_for_prompt=None):
         }
     pinecone_tool = agent_components_for_prompt['pinecone_tool_name']
     all_tool_details = agent_components_for_prompt['all_tool_details_for_prompt']
-    prompt = f"""You are FiFi, an expert AI assistant for 1-2-Taste... (Full system prompt is unchanged) ... Decision Logic for Fallback: Always try the primary tool first. If, and only if, the results are inadequate, then consider using the web search tool..."""
+    prompt = f"""You are FiFi, an expert AI assistant for 1-2-Taste. Your **sole purpose** is to assist users with inquiries related to 1-2-Taste's products, the food and beverage ingredients industry, food science topics relevant to 1-2-Taste's offerings, B2B inquiries, recipe development support using 1-2-Taste ingredients, and specific e-commerce functions related to 1-2-Taste's WooCommerce platform.
+
+**Core Mission:**
+*   Provide accurate, **cited** information about 1-2-Taste's offerings using your product information capabilities.
+*   Assist with relevant e-commerce tasks if explicitly requested by the user.
+*   When your primary knowledge base doesn't have sufficient information, use the web search tool as a fallback to provide helpful information.
+*   Politely decline to answer questions that are outside of your designated scope.
+
+**Tool Usage Priority and Guidelines (Internal Instructions for You, the LLM):**
+
+1.  **Primary Product & Industry Information Tool (Internally known as `{pinecone_tool}`):**
+    *   For ANY query that could relate to 1-2-Taste product details, ingredients, flavors, availability, specifications, recipes, applications, food industry trends relevant to 1-2-Taste, or any information found within the 1-2-Taste catalog or relevant to its business, you **MUST ALWAYS PRIORITIZE** using this specialized tool.
+    *   To manage token usage, you MUST include `top_k: 5` and `snippet_size: 1024` in your arguments.
+
+2.  **Web Search Fallback Tool (Internally, `tavily_search_fallback`):**
+    *   You should **ONLY** use the web search tool under the following conditions:
+        a. The primary knowledge base tool (`{pinecone_tool}`) returns insufficient, irrelevant, or no useful information for a query that is still relevant to the food and beverage industry.
+        b. The user asks about recent industry trends, news, or developments that are unlikely to be in the static knowledge base.
+        c. The user asks about general food science or industry topics that are relevant to 1-2-Taste but not specifically about 1-2-Taste's own products.
+    *   **Decision Logic for Fallback:** Always try the primary tool first. If, and only if, the results are inadequate, then consider using the web search tool.
+
+3.  **E-commerce and Order Management Tools (Internally, WooCommerce tools):**
+    *   You should **ONLY** use these tools if the user's query EXPLICITLY mentions "WooCommerce", "orders", "customer accounts", or other clear e-commerce tasks.
+
+**Response Guidelines & Output Format:**
+*   **Strict Inclusion Policy:** You **MUST ONLY** include products in your answer that have a verifiable `productURL` or `source_url` in the tool's output. If a product appears in the tool's context but lacks a URL, you **MUST ignore it.**
+*   **Mandatory Citations:** For every product you mention, you **MUST ALWAYS** cite the `productURL` or `source_url`.
+*   **Web Source Citation:** When using information from the web search tool, clearly state that the information is from a web search and cite the source URLs provided by the tool.
+*   **Pricing:** Do not provide product prices. Direct users to the product page, to contact sales, or to the quote request page for (QUOTE ONLY) products.
+*   If both your knowledge base and web search fail, politely explain that you could not find the information.
+
+Answer the user's last query based on these instructions and the conversation history."""
     return prompt
 
 # --- All Helper Functions (count_tokens, prune_history, summarize_history_if_needed) are unchanged ---
@@ -121,7 +148,7 @@ async def summarize_history_if_needed(memory_instance: MemorySaver, thread_confi
             return True
     return False
 
-# --- Agent Initialization (Unchanged) ---
+# --- Agent Initialization ---
 async def run_async_initialization():
     print("@@@ ASYNC run_async_initialization...")
     client = MultiServerMCPClient({"pinecone": {"url": MCP_PINECONE_URL, "transport": "sse", "headers": {"Authorization": f"Bearer {MCP_PINECONE_API_KEY}"}}, "pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}})
@@ -140,12 +167,12 @@ def get_agent_components_cached():
     print("@@@ Populating cache by running async initialization...")
     return asyncio.run(run_async_initialization())
 
-# --- Agent Execution Call (MODIFIED to use session_state.thread_id) ---
+# --- Agent Execution Call ---
 async def execute_agent_call_with_memory(user_query: str):
     assistant_reply = ""
     agent_components = st.session_state.agent_components
     try:
-        config = {"configurable": {"thread_id": st.session_state.thread_id}} # Use session's thread_id
+        config = {"configurable": {"thread_id": st.session_state.thread_id}}
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
         prune_history(agent_components["memory_instance"], config, PRUNE_TOOL_MESSAGE_THRESHOLD_CHARS)
         await summarize_history_if_needed(agent_components["memory_instance"], config, main_system_prompt_content_str, SUMMARIZE_THRESHOLD_TOKENS, MESSAGES_TO_KEEP_AFTER_SUMMARIZATION, agent_components["llm_for_summary"])
@@ -182,7 +209,7 @@ if SECRETS_ARE_MISSING:
     st.error("Secrets are missing. Please configure them in Streamlit secrets.")
     st.stop()
 
-# --- INITIALIZE SESSION STATE (Now includes the unique thread_id) ---
+# --- Initialize Session State ---
 if "agent_components" not in st.session_state: st.session_state.agent_components = None
 if "messages" not in st.session_state: st.session_state.messages = []
 if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
@@ -200,7 +227,7 @@ except Exception as e:
     if "agent_components" in st.session_state: del st.session_state.agent_components
     st.stop()
 
-# --- SIDEBAR UI ---
+# --- Sidebar UI ---
 st.sidebar.markdown("## Memory Debugger")
 st.sidebar.markdown("---")
 st.sidebar.markdown("## Quick Questions")
@@ -210,17 +237,15 @@ for question in preview_questions:
         handle_new_query_submission(question)
 
 st.sidebar.markdown("---")
-# --- NEW "Clear Chat" Logic (Safe and Correct) ---
 if st.sidebar.button("🧹 Clear Chat History", use_container_width=True):
     st.session_state.messages = []
     st.session_state.query_to_process = None
     st.session_state.thinking_for_ui = False
-    # Generate a new thread ID to start a fresh conversation
     st.session_state.thread_id = str(uuid.uuid4())
     print(f"@@@ New conversation started with new Thread ID: {st.session_state.thread_id}")
     st.rerun()
 
-# --- MAIN CHAT UI ---
+# --- Main Chat UI ---
 for message in st.session_state.get("messages", []):
     with st.chat_message(message["role"]):
         st.markdown(str(message.get("content", "")))

@@ -239,7 +239,7 @@ preview_questions = [
     "Help me with my recipe for a new juice drink",
     "Suggest some natural strawberry flavours for a beverage",
     "I need vanilla flavours for ice-cream",
-    "Latest trends in plant-based proteins for 2025?"
+    "Latest trends in plant-based proteins for 2025?",
     "What is the status of my order?"
 ]
 for question in preview_questions:

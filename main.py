@@ -237,10 +237,10 @@ st.sidebar.markdown("## Quick Questions")
 # RESTORED the full list of questions, including the one for order status
 preview_questions = [
     "Help me with my recipe for a new juice drink",
-    "Suggest me some strawberry flavours for beverage",
-    "What is the status of my order?",
+    "Suggest some natural strawberry flavours for a beverage",
     "I need vanilla flavours for ice-cream",
-    "What are the latest trends in plant-based proteins for 2025?"
+    "Latest trends in plant-based proteins for 2025?"
+    "What is the status of my order?"
 ]
 for question in preview_questions:
     if st.sidebar.button(question, key=f"preview_{question}", use_container_width=True):

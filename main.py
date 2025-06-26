@@ -240,7 +240,7 @@ for question in preview_questions:
         handle_new_query_submission(question)
 
 st.sidebar.markdown("---")
-if st.sidebar.button("🧹 New Chat Session", use_container_width=True):
+if st.sidebar.button("🧹 Reset Chat Session", use_container_width=True):
     st.session_state.messages = []
     st.session_state.thinking_for_ui = False
     st.session_state.query_to_process = None

@@ -20,9 +20,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Constants for History Summarization ---
-SUMMARIZE_THRESHOLD_TOKENS = 500
-MESSAGES_TO_KEEP_AFTER_SUMMARIZATION = 12
+# --- FINAL: Robust Memory Management Constants ---
+# Trigger summarization if the conversation has more than this many messages...
+HISTORY_MESSAGE_THRESHOLD = 6 
+# ...OR if the token count of the history exceeds this limit.
+HISTORY_TOKEN_THRESHOLD = 25900
+# After summarization, this many recent messages will be kept raw.
+MESSAGES_TO_RETAIN = 2
 TOKEN_MODEL_ENCODING = "cl100k_base"
 
 # --- Load environment variables from secrets ---
@@ -61,7 +65,7 @@ def tavily_search_fallback(query: str) -> str:
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
-# --- System Prompt Definition (CORRECTED) ---
+# --- System Prompt Definition (Preserved from your code) ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
     if agent_components_for_prompt is None:
         agent_components_for_prompt = { 'pinecone_tool_name': "functions.get_context" }
@@ -109,35 +113,58 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     num_tokens += 2
     return num_tokens
 
-# --- Function to summarize history if needed ---
-async def summarize_history_if_needed(
-    memory_instance: MemorySaver, thread_config: dict, main_system_prompt_content_str: str,
-    summarize_threshold_tokens: int, keep_last_n_interactions: int, llm_for_summary: ChatOpenAI
-):
-    checkpoint = memory_instance.get(thread_config)
-    current_stored_messages = checkpoint.get("messages", []) if checkpoint else []
-    cleaned_messages = [m for m in current_stored_messages if not (isinstance(m, SystemMessage) and m.content == main_system_prompt_content_str)]
-    conversational_messages_only = cleaned_messages
-    current_token_count = count_tokens(conversational_messages_only)
-    if current_token_count > summarize_threshold_tokens:
-        st.info(f"Summarization Triggered...")
-        if len(conversational_messages_only) <= keep_last_n_interactions: return False
-        messages_to_summarize = conversational_messages_only[:-keep_last_n_interactions]
-        messages_to_keep_raw = conversational_messages_only[-keep_last_n_interactions:]
-        if messages_to_summarize:
-            summarization_prompt_messages = [SystemMessage(content="Summarize this conversation."), HumanMessage(content="\n".join([f"{m.type.capitalize()}: {m.content}" for m in messages_to_summarize]))]
-            try:
-                summary_response = await llm_for_summary.ainvoke(summarization_prompt_messages)
-                summary_content = summary_response.content
-                new_messages_for_checkpoint = [SystemMessage(content=f"Summary: {summary_content}")] + messages_to_keep_raw
-                if checkpoint is None: checkpoint = {"messages": []}
-                checkpoint["messages"] = new_messages_for_checkpoint
-                memory_instance.put(thread_config, checkpoint)
-                return True
-            except Exception as e:
-                st.error(f"Failed to generate summary: {e}")
-                return False
-    return False
+# --- FINAL Memory Management Function with Dual Trigger ---
+async def manage_memory_with_summary(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
+    """
+    Checks conversation history. If it's too long (by message count OR token count),
+    it summarizes older messages, keeping the last few intact.
+    """
+    checkpoint = memory.get(config)
+    if not checkpoint:
+        return
+
+    history = checkpoint.get("messages", [])
+    # Only consider user and AI messages for the count, ignoring past summaries
+    conversational_history = [msg for msg in history if isinstance(msg, (AIMessage, HumanMessage))]
+    
+    token_count = count_tokens(conversational_history)
+    message_count = len(conversational_history)
+
+    # DUAL TRIGGER: Check both conditions
+    if message_count > HISTORY_MESSAGE_THRESHOLD or token_count > HISTORY_TOKEN_THRESHOLD:
+        st.info("Conversation history is long. Summarizing older messages...")
+        print(f"@@@ MEMORY MGMT: Triggered. Messages: {message_count}, Tokens: {token_count}")
+
+        # Ensure we have enough messages to perform this operation
+        if len(conversational_history) <= MESSAGES_TO_RETAIN:
+            return
+
+        messages_to_summarize = conversational_history[:-MESSAGES_TO_RETAIN]
+        messages_to_keep = conversational_history[-MESSAGES_TO_RETAIN:]
+
+        summarization_prompt = [
+            SystemMessage(content="You are an expert at creating concise, third-person summaries of conversations. Extract all key entities, topics, and user intentions mentioned."),
+            HumanMessage(content="\n".join([f"{m.type.capitalize()}: {m.content}" for m in messages_to_summarize]))
+        ]
+        
+        try:
+            summary_response = await llm_for_summary.ainvoke(summarization_prompt)
+            summary_text = summary_response.content
+            
+            # This "breaks the chain" by creating a new history
+            new_history = [
+                SystemMessage(content=f"This is a summary of the preceding conversation: {summary_text}"),
+                *messages_to_keep
+            ]
+            
+            checkpoint["messages"] = new_history
+            memory.put(config, checkpoint)
+            print("@@@ MEMORY MGMT: History successfully summarized and replaced.")
+
+        except Exception as e:
+            st.error(f"Could not summarize history: {e}")
+            print(f"ERROR: History summarization failed: {traceback.format_exc()}")
+
 
 # --- Async handler for agent initialization ---
 @st.cache_resource(ttl=3600)
@@ -164,13 +191,19 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     assistant_reply = ""
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
+        
+        # Call the new, smart memory manager before every agent invocation.
+        await manage_memory_with_summary(agent_components["memory_instance"], config, agent_components["llm_for_summary"])
+
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
-        await summarize_history_if_needed(agent_components["memory_instance"], config, main_system_prompt_content_str, SUMMARIZE_THRESHOLD_TOKENS, MESSAGES_TO_KEEP_AFTER_SUMMARIZATION, agent_components["llm_for_summary"])
         current_checkpoint = agent_components["memory_instance"].get(config)
         history_messages = current_checkpoint.get("messages", []) if current_checkpoint else []
+        
         event_messages = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
+        
         event = {"messages": event_messages}
         result = await agent_components["agent_executor"].ainvoke(event, config=config)
+        
         if isinstance(result, dict) and "messages" in result and result["messages"]:
             for msg in reversed(result["messages"]):
                 if isinstance(msg, AIMessage):
@@ -183,6 +216,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     except Exception as e:
         st.error(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
         assistant_reply = f"(Error: {e})"
+    
     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     st.session_state.thinking_for_ui = False
     st.rerun()
@@ -190,6 +224,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
     if not st.session_state.get('thinking_for_ui', False):
+        st.session_state.active_question = query_text # Set active question on click
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
         st.session_state.thinking_for_ui = True
@@ -234,14 +269,15 @@ except Exception as e:
 # --- UI Rendering ---
 st.sidebar.markdown("## Quick questions")
 preview_questions = [
-    "Suggest some natural strawberry flavours for beverage",
+    "Help me with my recipe for a new juice drink",
+    "Suggest some natural strawberry flavours for a beverage",
+    "I need vanilla flavours for ice-cream",
     "Latest trends in plant-based proteins for 2025?",
     "What is my order status?"
 ]
 for question in preview_questions:
     button_type = "primary" if st.session_state.active_question == question else "secondary"
     if st.sidebar.button(question, key=f"preview_{question}", use_container_width=True, type=button_type):
-        st.session_state.active_question = question
         handle_new_query_submission(question)
 
 st.sidebar.markdown("---")
@@ -260,7 +296,6 @@ for message in st.session_state.get("messages", []):
         with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
             st.markdown(message.get("content", ""))
     else:
-        # MODIFIED: Add the user avatar
         with st.chat_message("user", avatar="assets/user-avatar.png"):
             st.markdown(message.get("content", ""))
 

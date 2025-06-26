@@ -191,12 +191,18 @@ def handle_new_query_submission(query_text: str):
 
 # --- Streamlit App Starts Here ---
 
-# ADDED: Custom CSS to style the chat input border
+# MODIFIED: Updated CSS block for on-click styling
 st.markdown("""
 <style>
-    /* Targets the container of the chat input */
+    /* This is the container for the chat input */
     .st-emotion-cache-1629p8f {
-        border: 1px solid #e6007e;
+        border: 1px solid #cccccc; /* Set a default light grey border */
+        border-radius: 7px; /* Optional: adds rounded corners like in the screenshot */
+    }
+
+    /* This applies when the user clicks into the text input */
+    .st-emotion-cache-1629p8f:focus-within {
+        border-color: #e6007e; /* Change border to Mexican Pink on focus */
     }
 </style>
 """, unsafe_allow_html=True)

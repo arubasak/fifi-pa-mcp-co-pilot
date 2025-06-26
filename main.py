@@ -21,12 +21,13 @@ st.set_page_config(
 )
 
 # --- FINAL: Robust Memory Management Constants ---
-# Trigger summarization if the conversation has more than this many messages...
+# Layer 1: Summarization is triggered if history exceeds these thresholds.
 HISTORY_MESSAGE_THRESHOLD = 6 
-# ...OR if the token count of the history exceeds this limit.
-HISTORY_TOKEN_THRESHOLD = 25900
-# After summarization, this many recent messages will be kept raw.
-MESSAGES_TO_RETAIN = 2
+HISTORY_TOKEN_THRESHOLD = 25000 # Kept slightly below the hard limit as a first-pass check
+MESSAGES_TO_RETAIN_AFTER_SUMMARY = 2
+
+# Layer 2: Final safety net. Your OpenAI TPM Limit is ~30,000. We reserve ~4k for the output.
+MAX_INPUT_TOKENS = 25904 
 TOKEN_MODEL_ENCODING = "cl100k_base"
 
 # --- Load environment variables from secrets ---
@@ -113,57 +114,60 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     num_tokens += 2
     return num_tokens
 
-# --- FINAL Memory Management Function with Dual Trigger ---
-async def manage_memory_with_summary(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
-    """
-    Checks conversation history. If it's too long (by message count OR token count),
-    it summarizes older messages, keeping the last few intact.
-    """
+# --- Layer 1: History Management Function ---
+async def manage_history_with_summary(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
     checkpoint = memory.get(config)
-    if not checkpoint:
-        return
+    if not checkpoint: return
 
     history = checkpoint.get("messages", [])
-    # Only consider user and AI messages for the count, ignoring past summaries
     conversational_history = [msg for msg in history if isinstance(msg, (AIMessage, HumanMessage))]
     
     token_count = count_tokens(conversational_history)
     message_count = len(conversational_history)
 
-    # DUAL TRIGGER: Check both conditions
     if message_count > HISTORY_MESSAGE_THRESHOLD or token_count > HISTORY_TOKEN_THRESHOLD:
         st.info("Conversation history is long. Summarizing older messages...")
-        print(f"@@@ MEMORY MGMT: Triggered. Messages: {message_count}, Tokens: {token_count}")
+        print(f"@@@ MEMORY MGMT: Triggered. Msgs: {message_count}, Tokens: {token_count}")
 
-        # Ensure we have enough messages to perform this operation
-        if len(conversational_history) <= MESSAGES_TO_RETAIN:
-            return
+        if len(conversational_history) <= MESSAGES_TO_RETAIN_AFTER_SUMMARY: return
 
-        messages_to_summarize = conversational_history[:-MESSAGES_TO_RETAIN]
-        messages_to_keep = conversational_history[-MESSAGES_TO_RETAIN:]
+        messages_to_summarize = conversational_history[:-MESSAGES_TO_RETAIN_AFTER_SUMMARY]
+        messages_to_keep = conversational_history[-MESSAGES_TO_RETAIN_AFTER_SUMMARY:]
 
-        summarization_prompt = [
-            SystemMessage(content="You are an expert at creating concise, third-person summaries of conversations. Extract all key entities, topics, and user intentions mentioned."),
-            HumanMessage(content="\n".join([f"{m.type.capitalize()}: {m.content}" for m in messages_to_summarize]))
-        ]
+        summarization_prompt = [SystemMessage(content="You are an expert at creating concise, third-person summaries of conversations. Extract all key entities, topics, and user intentions mentioned."), HumanMessage(content="\n".join([f"{m.type.capitalize()}: {m.content}" for m in messages_to_summarize]))]
         
         try:
             summary_response = await llm_for_summary.ainvoke(summarization_prompt)
             summary_text = summary_response.content
-            
-            # This "breaks the chain" by creating a new history
-            new_history = [
-                SystemMessage(content=f"This is a summary of the preceding conversation: {summary_text}"),
-                *messages_to_keep
-            ]
-            
+            new_history = [SystemMessage(content=f"Summary of preceding conversation: {summary_text}"), *messages_to_keep]
             checkpoint["messages"] = new_history
             memory.put(config, checkpoint)
-            print("@@@ MEMORY MGMT: History successfully summarized and replaced.")
-
+            print("@@@ MEMORY MGMT: History successfully summarized.")
         except Exception as e:
             st.error(f"Could not summarize history: {e}")
-            print(f"ERROR: History summarization failed: {traceback.format_exc()}")
+
+# --- Layer 2: Final Prompt Safety Net ---
+def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
+    """
+    Ensures the final prompt payload is under the token limit by truncating
+    the oldest conversational messages from the history portion if necessary.
+    """
+    total_tokens = count_tokens(messages)
+    if total_tokens <= max_tokens:
+        return messages
+
+    st.warning(f"Request is too large ({total_tokens} tokens). Shortening conversation to fit within limits.")
+    print(f"@@@ SAFETY NET: Payload size {total_tokens} > {max_tokens}. Truncating.")
+    
+    # Deconstruct the prompt to safely remove only from the history
+    system_message = messages[0]
+    user_query = messages[-1]
+    history = messages[1:-1]
+
+    while count_tokens([system_message] + history + [user_query]) > max_tokens and history:
+        history.pop(0) # Remove the oldest message from the history part
+
+    return [system_message] + history + [user_query]
 
 # --- Async handler for agent initialization ---
 @st.cache_resource(ttl=3600)
@@ -191,16 +195,20 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
         
-        # Call our new, smart memory manager before every agent invocation.
-        await manage_memory_with_summary(agent_components["memory_instance"], config, agent_components["llm_for_summary"])
+        # Layer 1: Manage the long-term history first.
+        await manage_history_with_summary(agent_components["memory_instance"], config, agent_components["llm_for_summary"])
 
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
         current_checkpoint = agent_components["memory_instance"].get(config)
         history_messages = current_checkpoint.get("messages", []) if current_checkpoint else []
         
+        # Assemble the full payload for this turn
         event_messages = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
         
-        event = {"messages": event_messages}
+        # Layer 2: Run the assembled payload through the final safety net.
+        final_messages = truncate_prompt_if_needed(event_messages, MAX_INPUT_TOKENS)
+        
+        event = {"messages": final_messages}
         result = await agent_components["agent_executor"].ainvoke(event, config=config)
         
         if isinstance(result, dict) and "messages" in result and result["messages"]:
@@ -211,7 +219,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
             if not assistant_reply:
                 assistant_reply = f"(Error: No AI message found for query: '{user_query}')"
         else:
-            assistant_reply = f"(Error: Unexpected response format: {type(result)} - {result})"
+            assistant_reply = f"(Error: Unexpected response format: {type(result)})"
     except Exception as e:
         st.error(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
         assistant_reply = f"(Error: {e})"
@@ -267,9 +275,8 @@ except Exception as e:
 
 # --- UI Rendering ---
 st.sidebar.markdown("## Quick questions")
-# Restored full list of preview questions
 preview_questions = [
-    "Suggest some natural strawberry flavours for a beverage",
+    "Suggest some natural strawberry flavours for beverage",
     "Latest trends in plant-based proteins for 2025?",
     "What is my order status?"
 ]

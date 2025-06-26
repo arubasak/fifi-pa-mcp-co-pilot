@@ -190,6 +190,17 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
+
+# ADDED: Custom CSS to style the chat input border
+st.markdown("""
+<style>
+    /* Targets the container of the chat input */
+    .st-emotion-cache-1629p8f {
+        border: 1px solid #e6007e;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot 🚀</h1>", unsafe_allow_html=True)
 
 if SECRETS_ARE_MISSING:
@@ -235,7 +246,6 @@ if st.sidebar.button("🧹 New Chat Session", use_container_width=True):
 # Display chat messages with custom assistant avatar
 for message in st.session_state.get("messages", []):
     if message["role"] == "assistant":
-        # MODIFIED: Use the correct avatar filename
         with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
             st.markdown(message.get("content", ""))
     else:
@@ -243,7 +253,6 @@ for message in st.session_state.get("messages", []):
             st.markdown(message.get("content", ""))
 
 if st.session_state.get('thinking_for_ui', False):
-    # MODIFIED: Use the correct avatar filename for the "thinking" message as well
     with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
         st.markdown("⌛ FiFi is thinking...")
 

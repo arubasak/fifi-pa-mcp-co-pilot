@@ -236,7 +236,7 @@ st.sidebar.markdown("## Quick questions")
 preview_questions = [
     "Suggest some natural strawberry flavours for a beverage",
     "Latest trends in plant-based proteins for 2025?",
-    "Get order status"
+    "What is my order status?"
 ]
 for question in preview_questions:
     button_type = "primary" if st.session_state.active_question == question else "secondary"

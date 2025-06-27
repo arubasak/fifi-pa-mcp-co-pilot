@@ -1,16 +1,12 @@
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
-
-# NECESSARY CHANGE: Using Streamlit's built-in responsive behavior.
-# "auto" will expand the sidebar on desktop and collapse it on mobile.
 st.set_page_config(
     page_title="FiFi Co-Pilot",
-    page_icon="assets/fifi-avatar.png",
+    page_icon="assets/fifi-avatar.png", 
     layout="wide",
-    initial_sidebar_state="auto"  # <-- THIS IS THE FIX
+    initial_sidebar_state="auto"
 )
 
-# NECESSARY CHANGE: Removing the duplicate import that was here.
 import datetime
 import asyncio
 import tiktoken
@@ -19,7 +15,6 @@ import traceback
 import uuid
 
 from langgraph.prebuilt import create_react_agent
-# (The rest of your code remains exactly the same)
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -122,24 +117,17 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
 async def manage_history_with_summary(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
     checkpoint = memory.get(config)
     if not checkpoint: return
-
     history = checkpoint.get("messages", [])
     conversational_history = [msg for msg in history if isinstance(msg, (AIMessage, HumanMessage))]
-    
     token_count = count_tokens(conversational_history)
     message_count = len(conversational_history)
-
     if message_count > HISTORY_MESSAGE_THRESHOLD or token_count > HISTORY_TOKEN_THRESHOLD:
         st.info("Conversation history is long. Summarizing older messages...")
         print(f"@@@ MEMORY MGMT: Triggered. Msgs: {message_count}, Tokens: {token_count}")
-
         if len(conversational_history) <= MESSAGES_TO_RETAIN_AFTER_SUMMARY: return
-
         messages_to_summarize = conversational_history[:-MESSAGES_TO_RETAIN_AFTER_SUMMARY]
         messages_to_keep = conversational_history[-MESSAGES_TO_RETAIN_AFTER_SUMMARY:]
-
         summarization_prompt = [SystemMessage(content="You are an expert at creating concise, third-person summaries of conversations. Extract all key entities, topics, and user intentions mentioned."), HumanMessage(content="\n".join([f"{m.type.capitalize()}: {m.content}" for m in messages_to_summarize]))]
-        
         try:
             summary_response = await llm_for_summary.ainvoke(summarization_prompt)
             summary_text = summary_response.content
@@ -155,17 +143,13 @@ def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
     total_tokens = count_tokens(messages)
     if total_tokens <= max_tokens:
         return messages
-
     st.warning(f"Request is too large ({total_tokens} tokens). Shortening conversation to fit within limits.")
     print(f"@@@ SAFETY NET: Payload size {total_tokens} > {max_tokens}. Truncating.")
-    
     system_message = messages[0]
     user_query = messages[-1]
     history = messages[1:-1]
-
     while count_tokens([system_message] + history + [user_query]) > max_tokens and history:
         history.pop(0)
-
     return [system_message] + history + [user_query]
 
 # --- Async handler for agent initialization ---
@@ -193,20 +177,14 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     assistant_reply = ""
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
-        
         await manage_history_with_summary(agent_components["memory_instance"], config, agent_components["llm_for_summary"])
-
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
         current_checkpoint = agent_components["memory_instance"].get(config)
         history_messages = current_checkpoint.get("messages", []) if current_checkpoint else []
-        
         event_messages = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
-        
         final_messages = truncate_prompt_if_needed(event_messages, MAX_INPUT_TOKENS)
-        
         event = {"messages": final_messages}
         result = await agent_components["agent_executor"].ainvoke(event, config=config)
-        
         if isinstance(result, dict) and "messages" in result and result["messages"]:
             for msg in reversed(result["messages"]):
                 if isinstance(msg, AIMessage):
@@ -219,7 +197,6 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     except Exception as e:
         st.error(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
         assistant_reply = f"(Error: {e})"
-    
     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     st.session_state.thinking_for_ui = False
     st.rerun()
@@ -234,19 +211,39 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
+# MODIFIED: CSS block is updated with new styles for layout adjustment
 st.markdown("""
 <style>
     /* This is the container for the chat input */
     .st-emotion-cache-1629p8f {
         border: 1px solid #cccccc; /* Set a default light grey border */
-        border-radius: 7px; /* Optional: adds rounded corners like in the screenshot */
+        border-radius: 7px; 
     }
     /* This applies when the user clicks into the text input */
     .st-emotion-cache-1629p8f:focus-within {
         border-color: #e6007e; /* Change border to Mexican Pink on focus */
     }
+
+    /* NEW: Pushes the chat input up from the bottom of the page */
+    .main .block-container {
+        padding-bottom: 5rem; /* Creates space at the bottom of the main content area */
+    }
+
+    /* NEW: Style for the footer text */
+    .footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        text-align: center;
+        font-size: 0.75rem;
+        color: #808080; /* A slightly darker grey for better readability */
+        padding: 0.5rem;
+        background-color: #ffffff; /* Give it a background to prevent overlap issues */
+    }
 </style>
 """, unsafe_allow_html=True)
+
 st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot</h1>", unsafe_allow_html=True)
 st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
 
@@ -316,3 +313,10 @@ user_prompt = st.chat_input("Ask me for ingredients, recipes, or order supportâ€
 if user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
+
+# ADDED: Footer with Terms of Service link
+st.markdown("""
+<div class="footer">
+    By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
+</div>
+""", unsafe_allow_html=True)

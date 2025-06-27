@@ -246,7 +246,7 @@ st.markdown("""
         
         text-align: center; /* Middle-alignment as requested */
         color: grey;
-        font-size: 0.75rem;
+        font-size: 0.90rem;
         z-index: 100;
     }
 </style>

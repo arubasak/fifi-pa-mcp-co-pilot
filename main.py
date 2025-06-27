@@ -205,7 +205,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
-    if not st.session_state.get('thinking_for_ui', False) and query_text:
+    if not st.session_state.get('thinking_for_ui', False):
         st.session_state.active_question = query_text
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
@@ -214,72 +214,29 @@ def handle_new_query_submission(query_text: str):
 
 # --- Streamlit App Starts Here ---
 
-# ***MINIMAL AND PRECISE CSS TO REPLICATE YOUR REFERENCE***
+# This CSS block is now minimal and correct.
 st.markdown("""
 <style>
-    /* 1. Increase the font size for the introductory caption */
+    /* 1. The original styling for the chat input container from your reference code */
+    .st-emotion-cache-1629p8f {
+        border: 1px solid #cccccc;
+        border-radius: 7px;
+    }
+    .st-emotion-cache-1629p8f:focus-within {
+        border-color: #e6007e;
+    }
+
+    /* 2. Increase the font size for the introductory caption */
     [data-testid="stCaptionContainer"] p {
         font-size: 1.1em !important;
     }
 
-    /* 2. Add padding to the bottom of the chat message list to make space for our input bar */
-    .main .st-emotion-cache-1gulkj5 {
-         padding-bottom: 9rem;
-    }
-
-    /* 3. The INVISIBLE container for our custom fixed input bar. Its ONLY job is positioning. */
-    .final-input-container {
-        position: fixed;
-        bottom: 10px; /* Exact 10px lift you requested */
-        left: 50%;
-        transform: translateX(-50%);
-        width: 100%;
-        max-width: 736px;
-        z-index: 99;
-    }
-
-    /* 4. The form element that contains the input and button.
-          THIS is what gets the border, just like .st-emotion-cache-1629p8f in your reference */
-    .final-input-container form {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        border: 1px solid #cccccc; /* FROM YOUR REFERENCE */
-        border-radius: 7px;     /* FROM YOUR REFERENCE */
-        background-color: white;
-        padding: 0.3rem 0.5rem 0.3rem 1rem;
-    }
-    .final-input-container form:focus-within {
-         border-color: #e6007e; /* FROM YOUR REFERENCE */
-    }
-
-    /* 5. Target the actual st.text_input to REMOVE its default border,
-          since the parent form now has the border. */
-    .final-input-container div[data-testid="stTextInput"] > div[data-baseweb="input"] {
-        border: none !important;
-        background-color: transparent;
-        box-shadow: none !important;
-    }
-
-    /* 6. Style the "Send" button to be a simple icon, just like st.chat_input */
-    .final-input-container button {
-        background-color: transparent !important;
-        border: none !important;
-        color: #8c8c8c !important; /* Muted grey like the original */
-        font-size: 1.5rem;
-        padding: 0 !important;
-        width: auto;
-    }
-    .final-input-container button:hover {
-        color: #e6007e !important;
-    }
-
-    /* 7. Style for the "Terms and Conditions" text directly below the input */
+    /* 3. Style for the "Terms and Conditions" text */
     .terms-text {
         text-align: center;
         color: grey;
         font-size: 0.75rem;
-        margin-top: 8px; /* Minimum margin requested */
+        padding-bottom: 1rem; /* Provide some space above the chat input */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -328,7 +285,7 @@ if st.sidebar.button("🧹 Reset chat session", use_container_width=True):
     print(f"@@@ New chat session started. Thread ID: {st.session_state.thread_id}")
     st.rerun()
 
-# Display chat messages
+# Display chat messages with custom assistant avatar
 for message in st.session_state.get("messages", []):
     if message["role"] == "assistant":
         with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
@@ -347,38 +304,16 @@ if st.session_state.get('query_to_process'):
     st.session_state.query_to_process = None
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
-# --- CUSTOM FLOATING INPUT BAR that perfectly mimics the original style ---
-st.markdown('<div class="final-input-container">', unsafe_allow_html=True)
-
-# Using st.form ensures 'Enter' key submission functionality
-with st.form(key='chat_form', clear_on_submit=True):
-    # Using columns with no gap to place input and button tightly together
-    col1, col2 = st.columns([1, 0.1])
-    with col1:
-        user_prompt = st.text_input(
-            "Ask me for ingredients, recipes, or order support—in any language.",
-            label_visibility="collapsed",
-            key="user_query_input",
-            disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
-        )
-    with col2:
-        # The submit button for the form, styled by CSS to be a simple icon
-        submit_button = st.form_submit_button(
-            "➤",
-            use_container_width=True,
-            disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
-        )
-
-# The "Terms and Conditions" text, placed directly below the input field
+# The only compromise: Terms text is placed here, above the input.
 st.markdown("""
 <div class="terms-text">
     By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Logic to handle the submission from our custom form
-if submit_button and user_prompt:
+# THE ORIGINAL CHAT INPUT - This guarantees the style is 100% correct.
+user_prompt = st.chat_input("Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
+                            disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
+if user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)

@@ -230,7 +230,7 @@ st.markdown("""
 
     /* 2. Increase the font size for the introductory caption */
     [data-testid="stCaptionContainer"] p {
-        font-size: 1.5em !important;
+        font-size: 1.3em !important;
     }
 
     /* 3. Style for the "Terms and Conditions" text */

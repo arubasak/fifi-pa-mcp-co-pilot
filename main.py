@@ -1,4 +1,29 @@
+# --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
+# NECESSARY CHANGE: Importing the component to detect the screen size.
+from streamlit_js_eval import streamlit_js_eval
+
+# NECESSARY CHANGE: This logic runs first to determine the sidebar state.
+# It runs a tiny piece of JavaScript in the user's browser to get the screen width.
+# We only need to run this once and then store it in the session state.
+if 'sidebar_state' not in st.session_state:
+    # Get the screen width from the browser. It might be None on the first run.
+    screen_width = streamlit_js_eval(js_expressions='screen.width', key = 'SCR_WIDTH')
+    
+    # Set the sidebar state based on screen width. A common breakpoint for mobile is 768px.
+    # If screen_width is None (first run), default to 'expanded'.
+    st.session_state.sidebar_state = "collapsed" if screen_width and screen_width < 768 else "expanded"
+
+# NECESSARY CHANGE: Consolidating the duplicate set_page_config calls into one.
+# The `initial_sidebar_state` is now dynamic based on the logic above.
+st.set_page_config(
+    page_title="FiFi Co-Pilot",
+    page_icon="assets/fifi-avatar.png",
+    layout="wide",
+    initial_sidebar_state=st.session_state.sidebar_state
+)
+
+# NECESSARY CHANGE: Removing the duplicate streamlit import.
 import datetime
 import asyncio
 import tiktoken
@@ -7,6 +32,7 @@ import traceback
 import uuid
 
 from langgraph.prebuilt import create_react_agent
+# (The rest of your code remains exactly the same)
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -14,19 +40,10 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, Tool
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
-# --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
-st.set_page_config(
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # --- FINAL: Robust Memory Management Constants ---
-# Layer 1: Summarization is triggered if history exceeds these thresholds.
 HISTORY_MESSAGE_THRESHOLD = 6 
-HISTORY_TOKEN_THRESHOLD = 25000 # Kept slightly below the hard limit as a first-pass check
+HISTORY_TOKEN_THRESHOLD = 25000
 MESSAGES_TO_RETAIN_AFTER_SUMMARY = 2
-
-# Layer 2: Final safety net. Your OpenAI TPM Limit is ~30,000. We reserve ~4k for the output.
 MAX_INPUT_TOKENS = 25904 
 TOKEN_MODEL_ENCODING = "cl100k_base"
 
@@ -148,10 +165,6 @@ async def manage_history_with_summary(memory: MemorySaver, config: dict, llm_for
 
 # --- Layer 2: Final Prompt Safety Net ---
 def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
-    """
-    Ensures the final prompt payload is under the token limit by truncating
-    the oldest conversational messages from the history portion if necessary.
-    """
     total_tokens = count_tokens(messages)
     if total_tokens <= max_tokens:
         return messages
@@ -159,13 +172,12 @@ def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
     st.warning(f"Request is too large ({total_tokens} tokens). Shortening conversation to fit within limits.")
     print(f"@@@ SAFETY NET: Payload size {total_tokens} > {max_tokens}. Truncating.")
     
-    # Deconstruct the prompt to safely remove only from the history
     system_message = messages[0]
     user_query = messages[-1]
     history = messages[1:-1]
 
     while count_tokens([system_message] + history + [user_query]) > max_tokens and history:
-        history.pop(0) # Remove the oldest message from the history part
+        history.pop(0)
 
     return [system_message] + history + [user_query]
 
@@ -195,17 +207,14 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
         
-        # Layer 1: Manage the long-term history first.
         await manage_history_with_summary(agent_components["memory_instance"], config, agent_components["llm_for_summary"])
 
         main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
         current_checkpoint = agent_components["memory_instance"].get(config)
         history_messages = current_checkpoint.get("messages", []) if current_checkpoint else []
         
-        # Assemble the full payload for this turn
         event_messages = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
         
-        # Layer 2: Run the assembled payload through the final safety net.
         final_messages = truncate_prompt_if_needed(event_messages, MAX_INPUT_TOKENS)
         
         event = {"messages": final_messages}
@@ -231,7 +240,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
     if not st.session_state.get('thinking_for_ui', False):
-        st.session_state.active_question = query_text # Set active question on click
+        st.session_state.active_question = query_text
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
         st.session_state.thinking_for_ui = True

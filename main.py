@@ -214,13 +214,15 @@ def handle_new_query_submission(query_text: str):
 
 # --- Streamlit App Starts Here ---
 
-# This CSS block is now minimal and correct.
+# This CSS block now achieves the final layout using pure CSS manipulation.
 st.markdown("""
 <style>
     /* 1. The original styling for the chat input container from your reference code */
     .st-emotion-cache-1629p8f {
         border: 1px solid #cccccc;
         border-radius: 7px;
+        /* THIS IS THE KEY: Lift the original input bar to make space below it */
+        bottom: 30px; /* Adjust this value to control the space for the terms text */
     }
     .st-emotion-cache-1629p8f:focus-within {
         border-color: #e6007e;
@@ -232,11 +234,14 @@ st.markdown("""
     }
 
     /* 3. Style for the "Terms and Conditions" text */
-    .terms-text {
-        text-align: center;
+    .terms-footer {
+        position: fixed; /* Fix it to the bottom of the viewport */
+        bottom: 10px;    /* Position it within the space created by lifting the input bar */
+        width: 100%;
+        text-align: center; /* Middle-alignment as requested */
         color: grey;
         font-size: 0.75rem;
-        padding-bottom: 1rem; /* Provide some space above the chat input */
+        z-index: 100; /* Ensure it's on top */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -304,14 +309,14 @@ if st.session_state.get('query_to_process'):
     st.session_state.query_to_process = None
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
-# The only compromise: Terms text is placed here, above the input.
+# This markdown object is now controlled by the ".terms-footer" CSS class
 st.markdown("""
-<div class="terms-text">
+<div class="terms-footer">
     By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
 </div>
 """, unsafe_allow_html=True)
 
-# THE ORIGINAL CHAT INPUT - This guarantees the style is 100% correct.
+# THE ORIGINAL CHAT INPUT - Its position is lifted by the CSS above.
 user_prompt = st.chat_input("Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
                             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
 if user_prompt:

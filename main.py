@@ -260,7 +260,7 @@ st.markdown("""
         box-shadow: none; /* Remove default blue glow if present */
     }
 
-    /* 5. Styling for the "Send" button to be compact and use the arrow icon, matching look */
+    /* 5. Styling for the "Send" button to be compact and use the arrow icon */
     .custom-fixed-input-container button[data-testid="baseButton-secondary"] {
         background-color: transparent !important; /* No background */
         border: none !important; /* No border */
@@ -372,7 +372,7 @@ with st.form(key='chat_form', clear_on_submit=True):
         submit_button = st.form_submit_button(
             "➤", # Unicode character for right arrow
             use_container_width=True,
-            key="send_message_button", # Unique key for the submit button
+            # key="send_message_button", # REMOVED: This was causing the TypeError when inside a form.
             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
         )
 

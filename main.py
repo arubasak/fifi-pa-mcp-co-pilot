@@ -1,10 +1,12 @@
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
+
+# NECESSARY CHANGE: Reverting to "expanded" to ensure it is open by default on desktop.
 st.set_page_config(
     page_title="FiFi Co-Pilot",
     page_icon="assets/fifi-avatar.png", 
     layout="wide",
-    initial_sidebar_state="auto"
+    initial_sidebar_state="expanded" 
 )
 
 import datetime
@@ -211,35 +213,35 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
-# MODIFIED: CSS block is updated with new styles for layout adjustment
+# MODIFIED: CSS block is updated with more robust styles for layout and footer.
 st.markdown("""
 <style>
-    /* This is the container for the chat input */
+    /* Chat input border styling */
     .st-emotion-cache-1629p8f {
-        border: 1px solid #cccccc; /* Set a default light grey border */
+        border: 1px solid #cccccc;
         border-radius: 7px; 
     }
-    /* This applies when the user clicks into the text input */
     .st-emotion-cache-1629p8f:focus-within {
-        border-color: #e6007e; /* Change border to Mexican Pink on focus */
+        border-color: #e6007e;
     }
 
-    /* NEW: Pushes the chat input up from the bottom of the page */
-    .main .block-container {
-        padding-bottom: 5rem; /* Creates space at the bottom of the main content area */
+    /* Main container that holds the chat messages */
+    /* This creates a buffer at the bottom so the last message isn't hidden */
+    div[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
+        padding-bottom: 7rem; /* Adjust this value as needed */
     }
 
-    /* NEW: Style for the footer text */
+    /* Footer styling */
     .footer {
         position: fixed;
-        bottom: 0;
         left: 0;
+        bottom: 0;
         width: 100%;
+        background-color: white;
+        color: grey;
         text-align: center;
-        font-size: 0.75rem;
-        color: #808080; /* A slightly darker grey for better readability */
         padding: 0.5rem;
-        background-color: #ffffff; /* Give it a background to prevent overlap issues */
+        z-index: 99; /* Ensures it stays on top of other elements */
     }
 </style>
 """, unsafe_allow_html=True)

@@ -10,4 +10,4 @@ font = "sans serif"
 borderColor = "#e6007e"
 
 [logger]
-level = "info"
+level = "debug"

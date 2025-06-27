@@ -4,9 +4,9 @@ import streamlit as st
 # NECESSARY CHANGE: Reverting to "expanded" to ensure it is open by default on desktop.
 st.set_page_config(
     page_title="FiFi",
-    page_icon="assets/fifi-avatar.png", 
+    page_icon="assets/fifi-avatar.png",
     layout="wide",
-    initial_sidebar_state="expanded" 
+    initial_sidebar_state="expanded"
 )
 
 import datetime
@@ -25,10 +25,10 @@ from langchain_core.tools import tool
 from tavily import TavilyClient
 
 # --- FINAL: Robust Memory Management Constants ---
-HISTORY_MESSAGE_THRESHOLD = 6 
+HISTORY_MESSAGE_THRESHOLD = 6
 HISTORY_TOKEN_THRESHOLD = 25000
 MESSAGES_TO_RETAIN_AFTER_SUMMARY = 2
-MAX_INPUT_TOKENS = 25904 
+MAX_INPUT_TOKENS = 25904
 TOKEN_MODEL_ENCODING = "cl100k_base"
 
 # --- Load environment variables from secrets ---
@@ -105,7 +105,7 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
     num_tokens = 0
     for message in messages:
-        num_tokens += 4 
+        num_tokens += 4
         if isinstance(message, BaseMessage): content = message.content
         elif isinstance(message, dict): content = message.get("content", "")
         else: content = str(message)
@@ -213,38 +213,40 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App Starts Here ---
-# MODIFIED: CSS block is updated with more robust styles for layout and footer.
+
+# --- CSS for Custom Fixed Input Bar ---
+# This CSS is the core of the solution. It creates a custom container for the input
+# bar and adds padding to the main content to prevent overlap.
 st.markdown("""
 <style>
-    /* Chat input border styling */
-    .st-emotion-cache-1629p8f {
-        border: 1px solid #cccccc;
-        border-radius: 7px; 
-    }
-    .st-emotion-cache-1629p8f:focus-within {
-        border-color: #e6007e;
-    }
-
     /* Main container that holds the chat messages */
-    /* This creates a buffer at the bottom so the last message isn't hidden */
+    /* This creates a buffer at the bottom so the last message isn't hidden by our fixed input bar */
     div[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
-        padding-bottom: 7rem; /* Adjust this value as needed */
+        padding-bottom: 9rem; /* Must be > height of the fixed-input-container */
     }
 
-    /* Footer styling */
-    .footer {
+    /* Our custom container for the input, button, and terms text */
+    .fixed-input-container {
         position: fixed;
-        left: 0;
         bottom: 0;
+        left: 0;
         width: 100%;
         background-color: white;
-        color: grey;
+        padding: 1rem 1rem 0.5rem 1rem; /* Padding: top, sides, bottom */
+        border-top: 1px solid #e6e6e6;
+        z-index: 99;
+    }
+
+    /* Style for the "Terms and Conditions" text below the input */
+    .terms-text {
         text-align: center;
-        padding: 0.5rem;
-        z-index: 99; /* Ensures it stays on top of other elements */
+        color: grey;
+        font-size: 0.75rem;
+        margin-top: 0.5rem; /* Space between input section and terms text */
     }
 </style>
 """, unsafe_allow_html=True)
+
 
 st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot</h1>", unsafe_allow_html=True)
 st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
@@ -309,16 +311,44 @@ if st.session_state.get('query_to_process'):
     st.session_state.query_to_process = None
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
-# Chat input
-user_prompt = st.chat_input("Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
-                            disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
-if user_prompt:
+# --- REPLACEMENT for st.chat_input: Custom Input Bar ---
+# This block creates our own input bar, replacing the native st.chat_input and footer.
+# It is wrapped in the .fixed-input-container div defined in the CSS above.
+st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
+
+# Use columns for a side-by-side layout of the text input and send button
+col1, col2 = st.columns([8, 1])
+
+with col1:
+    user_prompt = st.text_input(
+        "Ask me for ingredients, recipes, or order support—in any language.",
+        key="custom_text_input",
+        label_visibility="collapsed",
+        disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
+    )
+
+with col2:
+    # This button triggers the submission
+    send_button = st.button(
+        "Send",
+        key="send_button",
+        use_container_width=True,
+        disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
+    )
+
+# Logic to handle the submission from our custom components
+if send_button and user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
+    # Rerun to clear the input field and show the new message
+    st.rerun()
 
-# ADDED: Footer with Terms of Service link
+# The "Terms and Conditions" text, now correctly positioned below the input bar
 st.markdown("""
-<div class="footer">
+<div class="terms-text">
     By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
 </div>
 """, unsafe_allow_html=True)
+
+# Close the custom container div
+st.markdown('</div>', unsafe_allow_html=True)

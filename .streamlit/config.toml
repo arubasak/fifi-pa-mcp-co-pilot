@@ -1,12 +1,3 @@
-[server]
-# This is the single most important setting for embedding.
-# It tells Streamlit to prepare for being embedded in an iframe.
-headless = true
-
-# This setting helps with cookie compatibility in some browsers.
-enableCORS = true
-enableXsrfProtection = false
-
 [theme]
 primaryColor = "#e6007e"
 base = "light"

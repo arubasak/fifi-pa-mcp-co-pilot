@@ -222,7 +222,7 @@ st.markdown("""
         border: 1px solid #cccccc;
         border-radius: 7px;
         /* Lift the original input bar to make space below it */
-        bottom: 40px; /* Increased from 30px to push everything up */
+        bottom: 50px; /* Increased from 30px to push everything up */
     }
     .st-emotion-cache-1629p8f:focus-within {
         border-color: #e6007e;
@@ -236,7 +236,7 @@ st.markdown("""
     /* 3. Style for the "Terms and Conditions" text */
     .terms-footer {
         position: fixed; /* Fix it to the bottom of the viewport */
-        bottom: 20px;    /* Increased from 10px to push it up */
+        bottom: 30px;    /* Increased from 10px to push it up */
         
         /* These properties center the footer relative to the chat input */
         left: 50%;

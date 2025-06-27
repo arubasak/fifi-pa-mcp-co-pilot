@@ -161,7 +161,7 @@ def get_agent_components():
         print("@@@ ASYNC: Initializing resources...")
         client = MultiServerMCPClient({
             "pinecone": {"url": MCP_PINECONE_URL, "transport": "sse", "headers": {"Authorization": f"Bearer {MCP_PINECONE_API_KEY}"}},
-            #"pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}
+            "pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}
         })
         mcp_tools = await client.get_tools()
         all_tools = list(mcp_tools) + [tavily_search_fallback]

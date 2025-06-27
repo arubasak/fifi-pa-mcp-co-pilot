@@ -6,7 +6,7 @@ st.set_page_config(
     page_title="FiFi",
     page_icon="assets/fifi-avatar.png",
     layout="wide",
-    initial_sidebar_state="auto" # Correct for mobile sidebar behavior
+    initial_sidebar_state="auto"
 )
 
 import datetime
@@ -214,8 +214,7 @@ def handle_new_query_submission(query_text: str):
 
 # --- Streamlit App Starts Here ---
 
-# This CSS creates the custom "floating" input bar, applies original styling,
-# and positions the terms text.
+# ***MINIMAL AND PRECISE CSS TO MATCH YOUR REQUIREMENTS***
 st.markdown("""
 <style>
     /* 1. Increase the font size for the introductory caption */
@@ -223,64 +222,60 @@ st.markdown("""
         font-size: 1.1em !important;
     }
 
-    /* 2. Add padding to the bottom of the chat message list.
-          This value must be larger than the total height of our fixed input container
-          (input + button + terms text + margins + 10px lift) to prevent overlap. */
+    /* 2. Add padding to the bottom of the chat message list to make space for our input bar */
     .main .st-emotion-cache-1gulkj5 {
-         padding-bottom: 9rem; /* Approx. 144px needed, 9rem is 144px at 16px base font */
+         padding-bottom: 9rem;
     }
 
-    /* 3. The main container for our custom fixed input bar and terms text.
-          This lifts the entire block 10px from the bottom and centers it. */
-    .custom-fixed-input-container {
+    /* 3. The INVISIBLE container for our custom fixed input bar.
+          Its ONLY job is positioning. No visible styles. */
+    .final-input-container {
         position: fixed;
         bottom: 10px; /* Exact 10px lift you requested */
         left: 50%;
         transform: translateX(-50%);
         width: 100%;
-        max-width: 736px; /* Streamlit's default wide layout main column width */
-        background-color: #ffffff;
-        padding: 1rem; /* Padding inside this container around the input/terms */
-        box-sizing: border-box; /* Include padding in width calculation */
+        max-width: 736px;
         z-index: 99;
-        /* No border here, as the input field itself will have the border */
     }
 
-    /* 4. Styling for the st.text_input element to match the original st.chat_input's border */
-    /* Target the internal div that holds the actual input field and has the border */
-    .custom-fixed-input-container div[data-testid="stTextInput"] > div[data-baseweb="input"] {
-        border: 1px solid #cccccc; /* Original light grey border */
-        border-radius: 7px; /* Original rounded corners */
-        padding: 0.75rem 1rem; /* Adjust padding to match original appearance */
-        line-height: 1.5; /* Ensure text sits nicely */
-    }
-    /* Style for focus state - when the input is active */
-    .custom-fixed-input-container div[data-testid="stTextInput"] > div[data-baseweb="input"]:focus-within {
-        border-color: #e6007e; /* Original Mexican Pink on focus */
-        box-shadow: none; /* Remove default blue glow if present */
-    }
-
-    /* 5. Styling for the "Send" button to be compact and use the arrow icon */
-    .custom-fixed-input-container button[data-testid="baseButton-secondary"] {
-        background-color: transparent !important; /* No background */
-        border: none !important; /* No border */
-        color: #8c8c8c !important; /* Grey color for icon, like original */
-        font-size: 1.8rem; /* Make icon larger */
-        padding: 0.1rem 0.5rem; /* Minimal padding for button */
-        height: auto; /* Allow height to adapt to icon */
-        margin-top: -0.2rem; /* Minor vertical alignment adjustment */
+    /* 4. The form element that contains the input and button.
+          We make this a flex container to align items properly. */
+    .final-input-container form {
         display: flex;
         align-items: center;
-        justify-content: center;
+        gap: 0.5rem;
+        /* The border will be applied to the div INSIDE the form, not the form itself */
+        border: 1px solid #cccccc; /* FROM YOUR REFERENCE */
+        border-radius: 7px;     /* FROM YOUR REFERENCE */
+        background-color: white;
+        padding: 0.2rem 0.2rem 0.2rem 1rem;
     }
-    .custom-fixed-input-container button[data-testid="baseButton-secondary"]:hover {
-        color: #e6007e !important; /* Pink on hover */
-    }
-    .custom-fixed-input-container button[data-testid="baseButton-secondary"] div { /* Target text within button */
-        display: none; /* Hide button text label if "Send" is present */
+    .final-input-container form:focus-within {
+         border-color: #e6007e; /* FROM YOUR REFERENCE */
     }
 
-    /* 6. Style for the "Terms and Conditions" text directly below the input */
+    /* 5. Target the actual text input to remove its default border,
+          since the parent form now has the border. */
+    .final-input-container div[data-testid="stTextInput"] > div[data-baseweb="input"] {
+        border: none !important;
+        background-color: transparent;
+        box-shadow: none !important;
+    }
+
+    /* 6. Style the "Send" button to be a simple icon, just like st.chat_input */
+    .final-input-container button {
+        background-color: transparent !important;
+        border: none !important;
+        color: #8c8c8c !important; /* Muted grey like the original */
+        font-size: 1.5rem;
+        padding: 0 !important;
+    }
+    .final-input-container button:hover {
+        color: #e6007e !important;
+    }
+
+    /* 7. Style for the "Terms and Conditions" text directly below the input */
     .terms-text {
         text-align: center;
         color: grey;
@@ -353,37 +348,36 @@ if st.session_state.get('query_to_process'):
     st.session_state.query_to_process = None
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
-# --- CUSTOM FLOATING INPUT BAR with "Terms and Conditions" below it ---
-# This block replaces the original st.chat_input and provides the requested layout.
-st.markdown('<div class="custom-fixed-input-container">', unsafe_allow_html=True)
+# --- CUSTOM FLOATING INPUT BAR that perfectly mimics the original style ---
+st.markdown('<div class="final-input-container">', unsafe_allow_html=True)
 
 # Using st.form ensures 'Enter' key submission functionality
 with st.form(key='chat_form', clear_on_submit=True):
-    col1, col2 = st.columns([9, 1]) # Column ratio for input field and button
+    # Use columns to place input and button side-by-side
+    col1, col2 = st.columns([1, 0.1])
     with col1:
         user_prompt = st.text_input(
             "Ask me for ingredients, recipes, or order support—in any language.",
-            label_visibility="collapsed", # Hide the label to mimic st.chat_input
-            key="user_query_input", # Unique key for the text input
+            label_visibility="collapsed",
+            key="user_query_input",
             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
         )
     with col2:
-        # The submit button for the form, using a right-arrow to mimic original "Enter" icon visually
+        # The submit button for the form, styled by CSS to be a simple icon
         submit_button = st.form_submit_button(
-            "➤", # Unicode character for right arrow
+            "➤",
             use_container_width=True,
-            # key="send_message_button", # REMOVED: This was causing the TypeError when inside a form.
             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
         )
 
-# The "Terms and Conditions" text, placed directly below the input field within the same fixed container
+# The "Terms and Conditions" text, placed directly below the input field
 st.markdown("""
 <div class="terms-text">
     By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True) # Close the custom-fixed-input-container div
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Logic to handle the submission from our custom form
 if submit_button and user_prompt:

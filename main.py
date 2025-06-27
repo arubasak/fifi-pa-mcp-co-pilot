@@ -237,11 +237,17 @@ st.markdown("""
     .terms-footer {
         position: fixed; /* Fix it to the bottom of the viewport */
         bottom: 10px;    /* Position it within the space created by lifting the input bar */
+        
+        /* THIS IS THE CHANGE: These properties center the footer relative to the chat input */
+        left: 50%;
+        transform: translateX(-50%);
         width: 100%;
+        max-width: 736px; /* Same max-width as Streamlit's main content column */
+        
         text-align: center; /* Middle-alignment as requested */
         color: grey;
         font-size: 0.75rem;
-        z-index: 100; /* Ensure it's on top */
+        z-index: 100;
     }
 </style>
 """, unsafe_allow_html=True)

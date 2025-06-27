@@ -230,7 +230,7 @@ st.markdown("""
 
     /* 2. Increase the font size for the introductory caption */
     [data-testid="stCaptionContainer"] p {
-        font-size: 1.1em !important;
+        font-size: 2em !important;
     }
 
     /* 3. Style for the "Terms and Conditions" text */
@@ -252,7 +252,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='font-size: 24px;'>FiFi, AI sourcing assistant</h1>", unsafe_allow_html=True)
 st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
 
 if SECRETS_ARE_MISSING:
@@ -323,7 +323,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # THE ORIGINAL CHAT INPUT - Its position is lifted by the CSS above.
-user_prompt = st.chat_input("Ask me for ingredients, recipes, or order support—in any language.", key="main_chat_input",
+user_prompt = st.chat_input("Ask me for ingredients, recipes, or product development—in any language.", key="main_chat_input",
                             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
 if user_prompt:
     st.session_state.active_question = None

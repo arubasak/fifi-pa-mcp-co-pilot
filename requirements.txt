@@ -2,7 +2,6 @@
 streamlit==1.46.0
 tavily-python
 langchain-tavily
-streamlit-js-eval
 fpdf2
 
 # Env handling

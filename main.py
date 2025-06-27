@@ -1,12 +1,12 @@
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
 
-# NECESSARY CHANGE: Reverting to "expanded" to ensure it is open by default on desktop.
+# Configuration is set to "auto" to ensure sidebar collapses on mobile, as intended.
 st.set_page_config(
     page_title="FiFi",
     page_icon="assets/fifi-avatar.png",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 
 import datetime
@@ -214,45 +214,42 @@ def handle_new_query_submission(query_text: str):
 
 # --- Streamlit App Starts Here ---
 
-# OPTIMIZED CSS: This block contains the minimal changes to achieve the desired UI.
+# This CSS creates the custom "floating" input bar to meet your exact positioning requirements.
 st.markdown("""
 <style>
-    /* 1. Increase the font size for the introductory caption */
+    /* Increase the font size for the introductory caption */
     [data-testid="stCaptionContainer"] p {
-        font-size: 1.05em !important;
+        font-size: 1.1em !important;
     }
 
-    /* 2. Add padding to the bottom of the chat message list to make space for our input bar */
+    /* Add padding to the bottom of the chat message list to make space for our input bar */
     .main .st-emotion-cache-1gulkj5 {
-         padding-bottom: 8rem;
+         padding-bottom: 9rem;
     }
 
-    /* 3. Define the container for our "floating" input bar */
+    /* The container for our floating input bar */
     .fixed-input-container {
         position: fixed;
-        bottom: 10px; /* This is the "pull up a few pixels" adjustment */
-        width: calc(100% - 2rem);
-        background-color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        bottom: 10px; /* This is the 10px lift you requested */
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        max-width: 736px; /* Corresponds to Streamlit's main column width */
+        background-color: #ffffff;
         z-index: 99;
     }
 
-    /* 4. Style the "Terms and Conditions" text below the input */
+    /* The "Terms and Conditions" text below the input */
     .terms-text {
         text-align: center;
         color: grey;
         font-size: 0.75rem;
-        margin-top: 1rem; /* Space between the input/button and the terms text */
+        margin-top: 8px; /* Minimal margin you requested */
     }
 </style>
 """, unsafe_allow_html=True)
 
-
 st.markdown("<h1 style='font-size: 24px;'>FiFi, AI sourcing assistant</h1>", unsafe_allow_html=True)
-# This caption will be enlarged by the CSS above
 st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
 
 if SECRETS_ARE_MISSING:
@@ -296,7 +293,7 @@ if st.sidebar.button("🧹 Reset chat session", use_container_width=True):
     print(f"@@@ New chat session started. Thread ID: {st.session_state.thread_id}")
     st.rerun()
 
-# Display chat messages with custom assistant avatar
+# Display chat messages
 for message in st.session_state.get("messages", []):
     if message["role"] == "assistant":
         with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
@@ -315,35 +312,37 @@ if st.session_state.get('query_to_process'):
     st.session_state.query_to_process = None
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
-# --- OPTIMIZED CHAT INPUT: A floating input bar that preserves "Enter" functionality ---
+
+# --- Custom Chat Input Implementation ---
 st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
 # Using a form preserves the ability to press Enter to submit
 with st.form(key='chat_form', clear_on_submit=True):
     col1, col2 = st.columns([9, 1])
     with col1:
         user_prompt = st.text_input(
-            "Ask me anything...",
+            "Ask me for ingredients, recipes, or order support—in any language.",
             label_visibility="collapsed",
             key="main_chat_input",
             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
         )
     with col2:
-        # The submit button for the form
+        # The submit button for the form, with an icon that mimics the original
         submit_button = st.form_submit_button(
             "➤",
             use_container_width=True,
             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
         )
-    # The "Terms" text is now inside the same container but outside the columns
-    st.markdown("""
-    <div class="terms-text">
-        By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
-    </div>
-    """, unsafe_allow_html=True)
 
-# If the form was submitted (either by button or Enter), process the query
+# The "Terms" text is placed inside the container but outside the form
+st.markdown("""
+<div class="terms-text">
+    By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
+</div>
+""", unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+
+# If the form was submitted (by button or Enter), process the query
 if submit_button and user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
-
-st.markdown('</div>', unsafe_allow_html=True)

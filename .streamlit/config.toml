@@ -1,15 +1,27 @@
+[server]
+# This is the single most important setting for embedding.
+# It tells Streamlit to prepare for being embedded in an iframe.
+headless = true
+
+# Enable CORS and explicitly set the CSP header for maximum compatibility.
+enableCORS = true
+enableXsrfProtection = false # Often needed for embedded apps with forms/buttons
+
+[server.headers]
+# This explicitly allows your website to embed the app.
+Content-Security-Policy = "frame-ancestors https://www.12taste.com https://*.12taste.com"
+
+[browser]
+# This is less critical for the embedding itself but good to have.
+serverAddress = "fifi-co-pilot-v1-121263692901.europe-west4.run.app"
+
 [theme]
-# The primary accent color for interactive elements (buttons, borders, etc.)
 primaryColor = "#e6007e"
-
-# The background color for the main app area (can be white or another color)
+base = "light"
 backgroundColor = "#ffffff"
-
-# The background color for the sidebar
 secondaryBackgroundColor = "#f3f3f3"
-
-# The color for text
 textColor = "#31333F"
-
-# The font for the app
 font = "sans serif"
+
+[theme.sidebar]
+borderColor = "#e6007e"

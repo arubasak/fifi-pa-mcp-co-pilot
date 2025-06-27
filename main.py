@@ -1,29 +1,16 @@
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
-# NECESSARY CHANGE: Importing the component to detect the screen size.
-from streamlit_js_eval import streamlit_js_eval
 
-# NECESSARY CHANGE: This logic runs first to determine the sidebar state.
-# It runs a tiny piece of JavaScript in the user's browser to get the screen width.
-# We only need to run this once and then store it in the session state.
-if 'sidebar_state' not in st.session_state:
-    # Get the screen width from the browser. It might be None on the first run.
-    screen_width = streamlit_js_eval(js_expressions='screen.width', key = 'SCR_WIDTH')
-    
-    # Set the sidebar state based on screen width. A common breakpoint for mobile is 768px.
-    # If screen_width is None (first run), default to 'expanded'.
-    st.session_state.sidebar_state = "collapsed" if screen_width and screen_width < 768 else "expanded"
-
-# NECESSARY CHANGE: Consolidating the duplicate set_page_config calls into one.
-# The `initial_sidebar_state` is now dynamic based on the logic above.
+# NECESSARY CHANGE: Using Streamlit's built-in responsive behavior.
+# "auto" will expand the sidebar on desktop and collapse it on mobile.
 st.set_page_config(
     page_title="FiFi Co-Pilot",
     page_icon="assets/fifi-avatar.png",
     layout="wide",
-    initial_sidebar_state=st.session_state.sidebar_state
+    initial_sidebar_state="auto"  # <-- THIS IS THE FIX
 )
 
-# NECESSARY CHANGE: Removing the duplicate streamlit import.
+# NECESSARY CHANGE: Removing the duplicate import that was here.
 import datetime
 import asyncio
 import tiktoken

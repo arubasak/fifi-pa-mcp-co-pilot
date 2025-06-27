@@ -205,7 +205,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
-    if not st.session_state.get('thinking_for_ui', False):
+    if not st.session_state.get('thinking_for_ui', False) and query_text:
         st.session_state.active_question = query_text
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
@@ -214,41 +214,45 @@ def handle_new_query_submission(query_text: str):
 
 # --- Streamlit App Starts Here ---
 
-# --- CSS for Custom Fixed Input Bar ---
-# This CSS is the core of the solution. It creates a custom container for the input
-# bar and adds padding to the main content to prevent overlap.
+# OPTIMIZED CSS: This block contains the minimal changes to achieve the desired UI.
 st.markdown("""
 <style>
-    /* Main container that holds the chat messages */
-    /* This creates a buffer at the bottom so the last message isn't hidden by our fixed input bar */
-    div[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
-        padding-bottom: 9rem; /* Must be > height of the fixed-input-container */
+    /* 1. Increase the font size for the introductory caption */
+    [data-testid="stCaptionContainer"] p {
+        font-size: 1.05em !important;
     }
 
-    /* Our custom container for the input, button, and terms text */
+    /* 2. Add padding to the bottom of the chat message list to make space for our input bar */
+    .main .st-emotion-cache-1gulkj5 {
+         padding-bottom: 8rem;
+    }
+
+    /* 3. Define the container for our "floating" input bar */
     .fixed-input-container {
         position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
+        bottom: 10px; /* This is the "pull up a few pixels" adjustment */
+        width: calc(100% - 2rem);
         background-color: white;
-        padding: 1rem 1rem 0.5rem 1rem; /* Padding: top, sides, bottom */
-        border-top: 1px solid #e6e6e6;
+        padding: 1rem;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         z-index: 99;
     }
 
-    /* Style for the "Terms and Conditions" text below the input */
+    /* 4. Style the "Terms and Conditions" text below the input */
     .terms-text {
         text-align: center;
         color: grey;
         font-size: 0.75rem;
-        margin-top: 0.5rem; /* Space between input section and terms text */
+        margin-top: 1rem; /* Space between the input/button and the terms text */
     }
 </style>
 """, unsafe_allow_html=True)
 
 
 st.markdown("<h1 style='font-size: 24px;'>FiFi, AI sourcing assistant</h1>", unsafe_allow_html=True)
+# This caption will be enlarged by the CSS above
 st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
 
 if SECRETS_ARE_MISSING:
@@ -311,44 +315,35 @@ if st.session_state.get('query_to_process'):
     st.session_state.query_to_process = None
     asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
-# --- REPLACEMENT for st.chat_input: Custom Input Bar ---
-# This block creates our own input bar, replacing the native st.chat_input and footer.
-# It is wrapped in the .fixed-input-container div defined in the CSS above.
+# --- OPTIMIZED CHAT INPUT: A floating input bar that preserves "Enter" functionality ---
 st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
+# Using a form preserves the ability to press Enter to submit
+with st.form(key='chat_form', clear_on_submit=True):
+    col1, col2 = st.columns([9, 1])
+    with col1:
+        user_prompt = st.text_input(
+            "Ask me anything...",
+            label_visibility="collapsed",
+            key="main_chat_input",
+            disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
+        )
+    with col2:
+        # The submit button for the form
+        submit_button = st.form_submit_button(
+            "➤",
+            use_container_width=True,
+            disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
+        )
+    # The "Terms" text is now inside the same container but outside the columns
+    st.markdown("""
+    <div class="terms-text">
+        By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
+    </div>
+    """, unsafe_allow_html=True)
 
-# Use columns for a side-by-side layout of the text input and send button
-col1, col2 = st.columns([8, 1])
-
-with col1:
-    user_prompt = st.text_input(
-        "Ask me for ingredients, recipes, or order support—in any language.",
-        key="custom_text_input",
-        label_visibility="collapsed",
-        disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
-    )
-
-with col2:
-    # This button triggers the submission
-    send_button = st.button(
-        "Send",
-        key="send_button",
-        use_container_width=True,
-        disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False)
-    )
-
-# Logic to handle the submission from our custom components
-if send_button and user_prompt:
+# If the form was submitted (either by button or Enter), process the query
+if submit_button and user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
-    # Rerun to clear the input field and show the new message
-    st.rerun()
 
-# The "Terms and Conditions" text, now correctly positioned below the input bar
-st.markdown("""
-<div class="terms-text">
-    By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
-</div>
-""", unsafe_allow_html=True)
-
-# Close the custom container div
 st.markdown('</div>', unsafe_allow_html=True)

@@ -7,9 +7,6 @@ headless = true
 enableCORS = true
 enableXsrfProtection = false
 
-[browser]
-serverAddress = "fifi-co-pilot-v1-121263692901.europe-west4.run.app"
-
 [theme]
 primaryColor = "#e6007e"
 base = "light"

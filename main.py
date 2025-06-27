@@ -210,7 +210,7 @@ def handle_new_query_submission(query_text: str):
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
         st.session_state.thinking_for_ui = True
-        st.rerun()
+        #st.rerun()
 
 # --- Streamlit App Starts Here ---
 

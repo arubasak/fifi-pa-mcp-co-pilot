@@ -252,7 +252,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot</h1>", unsafe_allow_html=True)
-st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, receive real-time assistance with your orders and more.")
+st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
 
 if SECRETS_ARE_MISSING:
     st.error("Secrets missing. Please configure OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, and TAVILY_API_KEY.")
@@ -278,7 +278,7 @@ st.sidebar.markdown("## Quick questions")
 preview_questions = [
     "Suggest some natural strawberry flavours for beverage",
     "Latest trends in plant-based proteins for 2025?",
-    "What is my order status?"
+    "Suggest me some vanilla flavours for ice-cream"
 ]
 for question in preview_questions:
     button_type = "primary" if st.session_state.active_question == question else "secondary"

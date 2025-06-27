@@ -214,7 +214,7 @@ def handle_new_query_submission(query_text: str):
 
 # --- Streamlit App Starts Here ---
 
-# ***MINIMAL AND PRECISE CSS TO MATCH YOUR REQUIREMENTS***
+# ***MINIMAL AND PRECISE CSS TO REPLICATE YOUR REFERENCE***
 st.markdown("""
 <style>
     /* 1. Increase the font size for the introductory caption */
@@ -227,8 +227,7 @@ st.markdown("""
          padding-bottom: 9rem;
     }
 
-    /* 3. The INVISIBLE container for our custom fixed input bar.
-          Its ONLY job is positioning. No visible styles. */
+    /* 3. The INVISIBLE container for our custom fixed input bar. Its ONLY job is positioning. */
     .final-input-container {
         position: fixed;
         bottom: 10px; /* Exact 10px lift you requested */
@@ -240,22 +239,21 @@ st.markdown("""
     }
 
     /* 4. The form element that contains the input and button.
-          We make this a flex container to align items properly. */
+          THIS is what gets the border, just like .st-emotion-cache-1629p8f in your reference */
     .final-input-container form {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        /* The border will be applied to the div INSIDE the form, not the form itself */
         border: 1px solid #cccccc; /* FROM YOUR REFERENCE */
         border-radius: 7px;     /* FROM YOUR REFERENCE */
         background-color: white;
-        padding: 0.2rem 0.2rem 0.2rem 1rem;
+        padding: 0.3rem 0.5rem 0.3rem 1rem;
     }
     .final-input-container form:focus-within {
          border-color: #e6007e; /* FROM YOUR REFERENCE */
     }
 
-    /* 5. Target the actual text input to remove its default border,
+    /* 5. Target the actual st.text_input to REMOVE its default border,
           since the parent form now has the border. */
     .final-input-container div[data-testid="stTextInput"] > div[data-baseweb="input"] {
         border: none !important;
@@ -270,6 +268,7 @@ st.markdown("""
         color: #8c8c8c !important; /* Muted grey like the original */
         font-size: 1.5rem;
         padding: 0 !important;
+        width: auto;
     }
     .final-input-container button:hover {
         color: #e6007e !important;
@@ -285,7 +284,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 style='font-size: 24px;'>FiFi, AI sourcing assistant</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='font-size: 24px;'>FiFi Co-Pilot</h1>", unsafe_allow_html=True)
 st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
 
 if SECRETS_ARE_MISSING:
@@ -353,7 +352,7 @@ st.markdown('<div class="final-input-container">', unsafe_allow_html=True)
 
 # Using st.form ensures 'Enter' key submission functionality
 with st.form(key='chat_form', clear_on_submit=True):
-    # Use columns to place input and button side-by-side
+    # Using columns with no gap to place input and button tightly together
     col1, col2 = st.columns([1, 0.1])
     with col1:
         user_prompt = st.text_input(

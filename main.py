@@ -160,7 +160,7 @@ def get_agent_components():
     async def run_async_initialization():
         print("@@@ ASYNC: Initializing resources...")
         client = MultiServerMCPClient({
-            "pinecone": {"url": MCP_PINECONE_URL, "transport": "sse", "headers": {"Authorization": f"Bearer {MCP_PINECONE_API_KEY}"}},
+            #"pinecone": {"url": MCP_PINECONE_URL, "transport": "sse", "headers": {"Authorization": f"Bearer {MCP_PINECONE_API_KEY}"}},
             "pipedream": {"url": MCP_PIPEDREAM_URL, "transport": "sse"}
         })
         mcp_tools = await client.get_tools()

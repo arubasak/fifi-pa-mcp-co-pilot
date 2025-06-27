@@ -3,7 +3,7 @@ import streamlit as st
 
 # NECESSARY CHANGE: Reverting to "expanded" to ensure it is open by default on desktop.
 st.set_page_config(
-    page_title="FiFi Co-Pilot",
+    page_title="FiFi",
     page_icon="assets/fifi-avatar.png", 
     layout="wide",
     initial_sidebar_state="expanded" 

@@ -1,33 +1,13 @@
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
 
-# Configuration is set to "auto" to ensure sidebar collapses on mobile and expands on desktop.
+# Configuration is set to "auto" to ensure sidebar collapses on mobile, as intended.
 st.set_page_config(
     page_title="FiFi",
     page_icon="assets/fifi-avatar.png",
     layout="wide",
     initial_sidebar_state="auto"
 )
-
-# Inject responsive sidebar toggle
-st.markdown("""
-    <script>
-    window.addEventListener("load", function() {
-        const sidebarToggle = window.parent.document.querySelector('button[title="Open sidebar"], button[title="Close sidebar"]');
-        const isDesktop = window.innerWidth > 768;
-
-        if (sidebarToggle) {
-            const isCollapsed = sidebarToggle.title === "Open sidebar";
-            if (isDesktop && isCollapsed) {
-                sidebarToggle.click();
-            } else if (!isDesktop && !isCollapsed) {
-                sidebarToggle.click();
-            }
-        }
-    });
-    </script>
-""", unsafe_allow_html=True)
-
 
 import datetime
 import asyncio
@@ -235,17 +215,16 @@ def handle_new_query_submission(query_text: str):
 # --- Streamlit App Starts Here ---
 
 # This CSS block now achieves the final layout using pure CSS manipulation.
-# *** THIS BLOCK CONTAINS THE CORRECTED CODE ***
 st.markdown("""
 <style>
-    /* 1. Use the stable data-testid to target the chat input, preventing conflicts */
-    [data-testid="stChatInput"] {
+    /* 1. The original styling for the chat input container from your reference code */
+    .st-emotion-cache-1629p8f {
         border: 1px solid #ffffff;
         border-radius: 7px;
         /* Lift the original input bar to make space below it */
-        bottom: 30px;
+        bottom: 30px; /* Increased from 30px to push everything up */
     }
-    [data-testid="stChatInput"]:focus-within {
+    .st-emotion-cache-1629p8f:focus-within {
         border-color: #e6007e;
     }
 

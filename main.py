@@ -217,12 +217,21 @@ def handle_new_query_submission(query_text: str):
 # This CSS block now achieves the final layout using pure CSS manipulation.
 st.markdown("""
 <style>
-    /* 1. The original styling for the chat input container from your reference code */
+    /* 1. Styling for the chat input container */
+    /* Note: .st-emotion-cache-1629p8f is a Streamlit-generated class and might change in future versions.
+             Using data-testid="stChatInputContainer" would be more stable if available.
+             For now, we continue with your class as it's what you're using. */
     .st-emotion-cache-1629p8f {
         border: 1px solid #ffffff;
         border-radius: 7px;
-        /* Lift the original input bar to make space below it */
-        bottom: 30px; /* Increased from 30px to push everything up */
+        /* Position the input box above the terms footer */
+        bottom: 40px; /* Lifted from 30px to make space for the footer below it */
+        position: fixed; /* Keep it fixed relative to the iframe's viewport */
+        width: 100%; /* Ensure it spans the width within its containing block */
+        max-width: 736px; /* Maintain the max-width to align with main content */
+        left: 50%; /* Center horizontally */
+        transform: translateX(-50%); /* Adjust for perfect centering */
+        z-index: 101; /* Ensure it's on top of the footer if there's any slight overlap */
     }
     .st-emotion-cache-1629p8f:focus-within {
         border-color: #e6007e;
@@ -236,7 +245,7 @@ st.markdown("""
     /* 3. Style for the "Terms and Conditions" text */
     .terms-footer {
         position: fixed; /* Fix it to the bottom of the viewport */
-        bottom: 30px;    /* Increased from 30px to push it up */
+        bottom: 10px;    /* Adjusted: Positioned lower than the chat input, closer to the very bottom */
         
         /* These properties center the footer relative to the chat input */
         left: 50%;
@@ -247,8 +256,22 @@ st.markdown("""
         text-align: center; /* Middle-alignment as requested */
         color: grey;
         font-size: 0.90rem;
-        z-index: 100;
+        z-index: 100; /* Ensure it's below the chat input */
     }
+
+    /* 4. Add padding to the main content area */
+    /* This creates space at the bottom of the scrollable content, so chat messages don't go under fixed elements */
+    /* Targets the main vertical block where chat messages are displayed */
+    [data-testid="stVerticalBlock"] {
+        padding-bottom: 120px; /* Adjust this value as needed based on total height of input + footer + desired gap */
+    }
+
+    /* OPTIONAL: Adjust default Streamlit padding around the chat input if needed */
+    /* This might be helpful if the input itself has too much internal padding */
+    /* .st-chat-input-container {
+        padding-bottom: 0px !important;
+    } */
+
 </style>
 """, unsafe_allow_html=True)
 

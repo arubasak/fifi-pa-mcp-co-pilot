@@ -278,6 +278,8 @@ st.markdown("""
     .terms-footer {
         position: fixed;
         bottom: 10px;
+        margin-top: 0px; 
+        margin-bottom: 10px;
         left: 50%;
         transform: translateX(-50%);
         width: 100%;
@@ -288,18 +290,24 @@ st.markdown("""
         z-index: 100;
     }
 
-    /* 4. Add padding to the main content area (Your Original Version) */
+    /* 4. Add a SMALLER padding to the bottom of the whole message list */
     [data-testid="stVerticalBlock"] {
-        padding-bottom: 50px;
+        padding-bottom: 40px; /* Reduced to minimize gap at the very bottom */
     }
 
-    /* 5. FIX: Manages the main app scrollbar without forcing an artificial height */
-.stApp {
-    overflow-y: auto !important;
-}
-.st-scroll-to-bottom {
-    display: none !important;
-}
+    /* 5. FIX: Control the vertical gap BETWEEN individual chat messages */
+    [data-testid="stChatMessage"] {
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+
+    /* 6. Rules for iframe stability */
+    .stApp {
+        overflow-y: auto !important;
+    }
+    .st-scroll-to-bottom {
+        display: none !important;
+    }
 
 </style>
 """, unsafe_allow_html=True)

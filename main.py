@@ -297,8 +297,8 @@ st.markdown("""
 
     /* 5. FIX: Control the vertical gap BETWEEN individual chat messages */
     [data-testid="stChatMessage"] {
-        margin-top: 0.5rem !important;
-        margin-bottom: 0.5rem !important;
+        margin-top: 0.25rem !important;
+        margin-bottom: 0.25rem !important;
     }
 
     /* 6. Rules for iframe stability */

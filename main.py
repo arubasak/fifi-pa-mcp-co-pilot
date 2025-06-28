@@ -32,7 +32,7 @@ def get_image_as_base64(file_path):
 
 # Load images once using the helper function
 FIFI_AVATAR_B64 = get_image_as_base64("assets/fifi-avatar.png")
-USER_AVATAR_B64 = get_image_as_base64("assets/user-avatar.png") # Assuming you have a user avatar
+USER_AVATAR_B64 = get_image_as_base64("assets/user-avatar.png")
 
 # Use the Base64 string for the page_icon to avoid MediaFileStorageError
 st.set_page_config(
@@ -42,13 +42,12 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# FIX: A more robust asyncio helper function that does not depend on the error message string.
+# Robust asyncio helper function that works in any environment
 def get_or_create_eventloop():
     """Gets the active asyncio event loop or creates a new one."""
     try:
         return asyncio.get_running_loop()
     except RuntimeError:
-        # If there's no running loop, create a new one and set it for the current thread.
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         return loop
@@ -79,7 +78,7 @@ if not SECRETS_ARE_MISSING:
 @tool
 def tavily_search_fallback(query: str) -> str:
     """
-    Search the web using Tavily. Use this as your first choice for queries about broader, public-knowledge topics like recent industry news, market trends, or general food science questions.
+    Search the web using Tavily. Use this for queries about broader, public-knowledge topics.
     """
     try:
         tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
@@ -129,7 +128,6 @@ Based on the conversation history and these instructions, answer the user's last
 
 # --- Helper function to count tokens ---
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    # (No changes in this function)
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -147,7 +145,6 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
 
 # --- Layer 1: History Management Function ---
 async def manage_history_with_summary(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
-    # (No changes in this function)
     checkpoint = memory.get(config)
     if not checkpoint: return
     history = checkpoint.get("messages", [])
@@ -173,7 +170,6 @@ async def manage_history_with_summary(memory: MemorySaver, config: dict, llm_for
 
 # --- Layer 2: Final Prompt Safety Net ---
 def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
-    # (No changes in this function)
     total_tokens = count_tokens(messages)
     if total_tokens <= max_tokens:
         return messages
@@ -208,10 +204,13 @@ def get_agent_components():
     loop = get_or_create_eventloop()
     return loop.run_until_complete(run_async_initialization())
 
-# --- Async handler for user queries ---
+# --- FIX: MODIFIED ASYNC HANDLER ---
+# This function now ONLY performs computation and RETURNS the result.
+# It does NOT touch st.session_state or call st.rerun().
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
-    # (No changes in this function)
-    assistant_reply = ""
+    """
+    Runs the agent and returns the assistant's reply or an error string.
+    """
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
         await manage_history_with_summary(agent_components["memory_instance"], config, agent_components["llm_for_summary"])
@@ -222,6 +221,8 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
         final_messages = truncate_prompt_if_needed(event_messages, MAX_INPUT_TOKENS)
         event = {"messages": final_messages}
         result = await agent_components["agent_executor"].ainvoke(event, config=config)
+        
+        assistant_reply = ""
         if isinstance(result, dict) and "messages" in result and result["messages"]:
             for msg in reversed(result["messages"]):
                 if isinstance(msg, AIMessage):
@@ -231,12 +232,13 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
                 assistant_reply = f"(Error: No AI message found for query: '{user_query}')"
         else:
             assistant_reply = f"(Error: Unexpected response format: {type(result)})"
+        
+        return assistant_reply
+
     except Exception as e:
-        st.error(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
-        assistant_reply = f"(Error: {e})"
-    st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
-    st.session_state.thinking_for_ui = False
-    st.rerun()
+        print(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
+        # We display the user-facing error in the main thread now
+        return f"(An error occurred during processing. Please try again.)"
 
 # --- Input Handling Function ---
 def handle_new_query_submission(query_text: str):
@@ -248,7 +250,6 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App UI ---
-# (CSS block is unchanged from the last working version)
 st.markdown("""
 <style>
     .st-emotion-cache-1629p8f {
@@ -342,9 +343,17 @@ if user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
 
-# Process new queries
+# --- FIX: MODIFIED PROCESSING LOGIC ---
+# This is now the ONLY place where the async function is called and state is updated.
 if st.session_state.get('query_to_process'):
     query_to_run = st.session_state.query_to_process
-    st.session_state.query_to_process = None
+    
+    # Run the async computation and get the reply back
     loop = get_or_create_eventloop()
-    loop.run_until_complete(execute_agent_call_with_memory(query_to_run, agent_components))
+    assistant_reply = loop.run_until_complete(execute_agent_call_with_memory(query_to_run, agent_components))
+
+    # Now, safely manage state in the main Streamlit thread
+    st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
+    st.session_state.thinking_for_ui = False
+    st.session_state.query_to_process = None # Clear the flag
+    st.rerun() # Trigger the final rerun to display the assistant's message

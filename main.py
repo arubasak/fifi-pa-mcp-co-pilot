@@ -262,7 +262,7 @@ st.markdown("""
        title, and description don't go under fixed elements. */
     main .block-container {
         /* This selector targets the main content area block, which usually handles scrolling */
-        padding-bottom: 70px; /* Adjust this value (e.g., 90px, 110px) if header is still off-screen
+        padding-bottom: 110px; /* Adjust this value (e.g., 90px, 110px) if header is still off-screen
                                    or too much empty space appears.
                                    Calculation: Input height (~60px) + Gap (~10px) + Footer height (~20px) = ~90px.
                                    Adding a bit extra (100px) provides a safe margin. */

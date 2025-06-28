@@ -244,7 +244,7 @@ st.markdown("""
     /* 3. Style for the "Terms and Conditions" text */
     .terms-footer {
         position: fixed; /* Fix it to the bottom of the viewport */
-        bottom: 10px;    /* Positioned very close to the absolute bottom of the iframe */
+        bottom: 30px;    /* Positioned very close to the absolute bottom of the iframe */
         left: 50%;
         transform: translateX(-50%); /* Centers the fixed element horizontally */
         width: 100%;

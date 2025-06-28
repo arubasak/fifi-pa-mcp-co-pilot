@@ -1,7 +1,7 @@
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
 
-# Configuration is set to "auto" to ensure sidebar collapses on mobile, as intended.
+# Configuration is set to "auto" to ensure sidebar collapses on mobile and expands on desktop.
 st.set_page_config(
     page_title="FiFi",
     page_icon="assets/fifi-avatar.png",
@@ -215,16 +215,17 @@ def handle_new_query_submission(query_text: str):
 # --- Streamlit App Starts Here ---
 
 # This CSS block now achieves the final layout using pure CSS manipulation.
+# *** THIS BLOCK CONTAINS THE CORRECTED CODE ***
 st.markdown("""
 <style>
-    /* 1. The original styling for the chat input container from your reference code */
-    .st-emotion-cache-1629p8f {
+    /* 1. Use the stable data-testid to target the chat input, preventing conflicts */
+    [data-testid="stChatInput"] {
         border: 1px solid #ffffff;
         border-radius: 7px;
         /* Lift the original input bar to make space below it */
-        bottom: 30px; /* Increased from 30px to push everything up */
+        bottom: 30px;
     }
-    .st-emotion-cache-1629p8f:focus-within {
+    [data-testid="stChatInput"]:focus-within {
         border-color: #e6007e;
     }
 

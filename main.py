@@ -293,15 +293,13 @@ st.markdown("""
         padding-bottom: 50px;
     }
 
-    /* 5. FIX: Added rules for iframe stability as requested */
-    .stApp {
-        overflow-y: auto !important;
-        height: 100vh !important;
-        min-height: -webkit-fill-available !important;
-    }
-    .st-scroll-to-bottom {
-        display: none !important;
-    }
+    /* 5. FIX: Manages the main app scrollbar without forcing an artificial height */
+.stApp {
+    overflow-y: auto !important;
+}
+.st-scroll-to-bottom {
+    display: none !important;
+}
 
 </style>
 """, unsafe_allow_html=True)

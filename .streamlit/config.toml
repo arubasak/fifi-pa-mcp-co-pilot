@@ -6,6 +6,7 @@ secondaryBackgroundColor = "#f3f3f3"
 textColor = "#31333F"
 font = "sans serif"
 dataframeBorderColor = "#e6007e"
+borderColor = "#e6007e"
 
 [theme.sidebar]
 borderColor = "#e6007e"

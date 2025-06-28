@@ -257,7 +257,7 @@ st.markdown("""
     .st-emotion-cache-1629p8f {
         border: 1px solid #ffffff;
         border-radius: 7px;
-        bottom: 10px;
+        bottom: 5px;
         position: fixed;
         width: 100%;
         max-width: 736px;
@@ -278,8 +278,6 @@ st.markdown("""
     .terms-footer {
         position: fixed;
         bottom: 10px;
-        margin-top: 0px; 
-        margin-bottom: 10px;
         left: 50%;
         transform: translateX(-50%);
         width: 100%;

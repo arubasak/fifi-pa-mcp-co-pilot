@@ -306,6 +306,11 @@ st.markdown("""
     .st-scroll-to-bottom {
         display: none !important;
     }
+    
+    /* 7. FIX: Hides the sidebar's resizer handle that appears on hover */
+    .st-emotion-cache-1fplawd {
+        display: none !important;
+    }
 
 </style>
 """, unsafe_allow_html=True)

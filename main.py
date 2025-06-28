@@ -14,7 +14,7 @@ st.markdown("""
     <script>
     window.addEventListener("load", function() {
         const sidebarToggle = window.parent.document.querySelector('button[title="Open sidebar"], button[title="Close sidebar"]');
-        const isDesktop = window.innerWidth > 1024;
+        const isDesktop = window.innerWidth > 768;
 
         if (sidebarToggle) {
             const isCollapsed = sidebarToggle.title === "Open sidebar";

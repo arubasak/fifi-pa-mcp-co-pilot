@@ -222,7 +222,7 @@ st.markdown("""
              Using data-testid="stChatInputContainer" would be more stable if available.
              For now, we continue with your class as it's what you're using. */
     .st-emotion-cache-1629p8f {
-        border: 1px solid #ffffff;
+        #border: 1px solid #ffffff;
         border-radius: 7px;
         /* Position the input box above the terms footer */
         bottom: 40px; /* Lifted from 30px to make space for the footer below it */

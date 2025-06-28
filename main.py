@@ -7,6 +7,27 @@ st.set_page_config(
     page_icon="assets/fifi-avatar.png",
     layout="wide",
     initial_sidebar_state="auto"
+
+    st.markdown("""
+    <script>
+    window.addEventListener("load", function() {
+        const sidebarToggle = window.parent.document.querySelector('button[title="Open sidebar"], button[title="Close sidebar"]');
+        const isDesktop = window.innerWidth > 1024;  // You can adjust this breakpoint
+
+        if (sidebarToggle) {
+            const isCollapsed = sidebarToggle.title === "Open sidebar";
+            if (isDesktop && isCollapsed) {
+                // Expand sidebar on desktop
+                sidebarToggle.click();
+            } else if (!isDesktop && !isCollapsed) {
+                // Collapse sidebar on mobile
+                sidebarToggle.click();
+            }
+        }
+    });
+    </script>
+""", unsafe_allow_html=True)
+
 )
 
 import datetime

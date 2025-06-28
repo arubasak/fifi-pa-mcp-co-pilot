@@ -8,6 +8,3 @@ font = "sans serif"
 
 [theme.sidebar]
 borderColor = "#e6007e"
-
-[logger]
-level = "debug"

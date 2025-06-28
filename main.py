@@ -1,14 +1,7 @@
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 import streamlit as st
-
-# Configuration is set to "auto" to ensure sidebar collapses on mobile, as intended.
-st.set_page_config(
-    page_title="FiFi",
-    page_icon="assets/fifi-avatar.png",
-    layout="wide",
-    initial_sidebar_state="auto"
-)
-
+import base64
+from pathlib import Path
 import datetime
 import asyncio
 import tiktoken
@@ -23,6 +16,43 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 from tavily import TavilyClient
+
+# FIX: Helper function to load and Base64-encode images for stateless deployment
+@st.cache_data
+def get_image_as_base64(file_path):
+    """Loads an image file and returns it as a Base64 encoded string."""
+    try:
+        path = Path(file_path)
+        with path.open("rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except Exception as e:
+        print(f"Error loading image {file_path}: {e}")
+        return None
+
+# FIX: Load images once using the helper function
+FIFI_AVATAR_B64 = get_image_as_base64("assets/fifi-avatar.png")
+USER_AVATAR_B64 = get_image_as_base64("assets/user-avatar.png") # Assuming you have a user avatar
+
+# FIX: Use the Base64 string for the page_icon to avoid MediaFileStorageError
+st.set_page_config(
+    page_title="FiFi",
+    page_icon=f"data:image/png;base64,{FIFI_AVATAR_B64}" if FIFI_AVATAR_B64 else "🤖",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
+
+# FIX: Helper function to safely get or create an asyncio event loop
+def get_or_create_eventloop():
+    """Gets the active asyncio event loop or creates a new one."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError as ex:
+        if "There is no current event loop in thread" in str(ex):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return asyncio.get_event_loop()
+        raise ex
 
 # --- FINAL: Robust Memory Management Constants ---
 HISTORY_MESSAGE_THRESHOLD = 6
@@ -86,7 +116,7 @@ Your first step is to analyze the user's query to determine the best tool. Do no
 3.  **Using Web Search as a Fallback:**
     *   If you tried the `{pinecone_tool}` for a query that seemed product-specific but it returned no relevant results, you should then use `tavily_search_fallback` (Web Search).
 4.  **E-commerce Tools:**
-    *   Use these tools ONLY for explicit user requests about "WooCommerce", "orders", "customer accounts", or "shipping status".
+    *   Use these for explicit user requests about "WooCommerce", "orders", "customer accounts", or "shipping status".
 **Response Formatting Rules (Strictly Enforced):**
 *   **Citations are MANDATORY:**
     *   For knowledge base results, cite `productURL`, `source_url`, or `sourceURL`.
@@ -171,8 +201,11 @@ def get_agent_components():
         agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
         print("@@@ ASYNC: Initialization complete.")
         return {"agent_executor": agent_executor, "memory_instance": memory, "llm_for_summary": llm, "main_system_prompt_content_str": system_prompt_content_value}
+    
     print("@@@ get_agent_components: Populating cache...")
-    return asyncio.run(run_async_initialization())
+    # FIX: Use loop.run_until_complete instead of asyncio.run()
+    loop = get_or_create_eventloop()
+    return loop.run_until_complete(run_async_initialization())
 
 # --- Async handler for user queries ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
@@ -210,68 +243,56 @@ def handle_new_query_submission(query_text: str):
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
         st.session_state.thinking_for_ui = True
-        #st.rerun()
+        st.rerun() # It's better to rerun here to immediately show the user's message
 
-# --- Streamlit App Starts Here ---
+# --- Streamlit App UI Starts Here ---
 
 # This CSS block now achieves the final layout using pure CSS manipulation.
 st.markdown("""
 <style>
-    /* 1. Styling for the chat input container */
-    /* Note: .st-emotion-cache-1629p8f is a Streamlit-generated class and might change in future versions.
-             Using data-testid="stChatInputContainer" would be more stable if available.
-             For now, we continue with your class as it's what you're using. */
     .st-emotion-cache-1629p8f {
-        border: 1px solid #ffffff;
+        border: 1px solid #e6007e;
         border-radius: 7px;
-        /* Position the input box above the terms footer */
-        bottom: 40px; /* Lifted from 30px to make space for the footer below it */
-        position: fixed; /* Keep it fixed relative to the iframe's viewport */
-        width: 100%; /* Ensure it spans the width within its containing block */
-        max-width: 736px; /* Maintain the max-width to align with main content */
-        left: 50%; /* Center horizontally */
-        transform: translateX(-50%); /* Adjust for perfect centering */
-        z-index: 101; /* Ensure it's on top of the footer if there's any slight overlap */
+        position: fixed;
+        bottom: 40px;
+        width: 100%;
+        max-width: 736px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 101;
+        box-sizing: border-box;
     }
     .st-emotion-cache-1629p8f:focus-within {
         border-color: #e6007e;
     }
-
-    /* 2. Increase the font size for the introductory caption */
     [data-testid="stCaptionContainer"] p {
         font-size: 1.3em !important;
     }
-
-    /* 3. Style for the "Terms and Conditions" text */
     .terms-footer {
-        position: fixed; /* Fix it to the bottom of the viewport */
-        bottom: 10px;    /* Adjusted: Positioned lower than the chat input, closer to the very bottom */
-        
-        /* These properties center the footer relative to the chat input */
+        position: fixed;
+        bottom: 10px;
         left: 50%;
         transform: translateX(-50%);
         width: 100%;
-        max-width: 736px; /* Same max-width as Streamlit's main content column */
-        
-        text-align: center; /* Middle-alignment as requested */
+        max-width: 736px;
+        text-align: center;
         color: grey;
         font-size: 0.90rem;
-        z-index: 100; /* Ensure it's below the chat input */
+        z-index: 100;
+        height: 20px;
+        line-height: 20px;
     }
-
-    /* 4. Add padding to the main content area */
-    /* This creates space at the bottom of the scrollable content, so chat messages don't go under fixed elements */
-    /* Targets the main vertical block where chat messages are displayed */
-    [data-testid="stVerticalBlock"] {
-        padding-bottom: 70px; /* Adjust this value as needed based on total height of input + footer + desired gap */
+    main .block-container {
+        padding-bottom: 100px;
     }
-
-    /* OPTIONAL: Adjust default Streamlit padding around the chat input if needed */
-    /* This might be helpful if the input itself has too much internal padding */
-    /* .st-chat-input-container {
-        padding-bottom: 0px !important;
-    } */
-
+    .stApp {
+        overflow-y: auto !important;
+        height: 100vh !important;
+        min-height: -webkit-fill-available !important;
+    }
+    .st-scroll-to-bottom {
+        display: none !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -319,24 +340,17 @@ if st.sidebar.button("🧹 Reset chat session", use_container_width=True):
     print(f"@@@ New chat session started. Thread ID: {st.session_state.thread_id}")
     st.rerun()
 
-# Display chat messages with custom assistant avatar
+# FIX: Display chat messages with Base64 avatars
+fifi_avatar_icon = f"data:image/png;base64,{FIFI_AVATAR_B64}" if FIFI_AVATAR_B64 else "🤖"
+user_avatar_icon = f"data:image/png;base64,{USER_AVATAR_B64}" if USER_AVATAR_B64 else "🧑‍💻"
 for message in st.session_state.get("messages", []):
-    if message["role"] == "assistant":
-        with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
-            st.markdown(message.get("content", ""))
-    else:
-        with st.chat_message("user", avatar="assets/user-avatar.png"):
-            st.markdown(message.get("content", ""))
+    avatar_icon = fifi_avatar_icon if message["role"] == "assistant" else user_avatar_icon
+    with st.chat_message(message["role"], avatar=avatar_icon):
+        st.markdown(message.get("content", ""))
 
 if st.session_state.get('thinking_for_ui', False):
-    with st.chat_message("assistant", avatar="assets/fifi-avatar.png"):
+    with st.chat_message("assistant", avatar=fifi_avatar_icon):
         st.markdown("⌛ FiFi is thinking...")
-
-# Process new queries
-if st.session_state.get('query_to_process'):
-    query_to_run = st.session_state.query_to_process
-    st.session_state.query_to_process = None
-    asyncio.run(execute_agent_call_with_memory(query_to_run, agent_components))
 
 # This markdown object is now controlled by the ".terms-footer" CSS class
 st.markdown("""
@@ -351,3 +365,11 @@ user_prompt = st.chat_input("Ask me for ingredients, recipes, or product develop
 if user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
+
+# Process new queries after the rerun from input handling
+if st.session_state.get('query_to_process'):
+    query_to_run = st.session_state.query_to_process
+    st.session_state.query_to_process = None
+    # FIX: Use loop.run_until_complete instead of asyncio.run()
+    loop = get_or_create_eventloop()
+    loop.run_until_complete(execute_agent_call_with_memory(query_to_run, agent_components))

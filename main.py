@@ -17,7 +17,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, Tool
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
-# FIX: Helper function to load and Base64-encode images for stateless deployment
+# Helper function to load and Base64-encode images for stateless deployment
 @st.cache_data
 def get_image_as_base64(file_path):
     """Loads an image file and returns it as a Base64 encoded string."""
@@ -30,11 +30,11 @@ def get_image_as_base64(file_path):
         print(f"Error loading image {file_path}: {e}")
         return None
 
-# FIX: Load images once using the helper function
+# Load images once using the helper function
 FIFI_AVATAR_B64 = get_image_as_base64("assets/fifi-avatar.png")
 USER_AVATAR_B64 = get_image_as_base64("assets/user-avatar.png") # Assuming you have a user avatar
 
-# FIX: Use the Base64 string for the page_icon to avoid MediaFileStorageError
+# Use the Base64 string for the page_icon to avoid MediaFileStorageError
 st.set_page_config(
     page_title="FiFi",
     page_icon=f"data:image/png;base64,{FIFI_AVATAR_B64}" if FIFI_AVATAR_B64 else "🤖",
@@ -42,17 +42,16 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# FIX: Helper function to safely get or create an asyncio event loop
+# FIX: A more robust asyncio helper function that does not depend on the error message string.
 def get_or_create_eventloop():
     """Gets the active asyncio event loop or creates a new one."""
     try:
         return asyncio.get_running_loop()
-    except RuntimeError as ex:
-        if "There is no current event loop in thread" in str(ex):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return asyncio.get_event_loop()
-        raise ex
+    except RuntimeError:
+        # If there's no running loop, create a new one and set it for the current thread.
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop
 
 # --- FINAL: Robust Memory Management Constants ---
 HISTORY_MESSAGE_THRESHOLD = 6
@@ -97,7 +96,7 @@ def tavily_search_fallback(query: str) -> str:
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
-# --- System Prompt Definition (Preserved from your code) ---
+# --- System Prompt Definition ---
 def get_system_prompt_content_string(agent_components_for_prompt=None):
     if agent_components_for_prompt is None:
         agent_components_for_prompt = { 'pinecone_tool_name': "functions.get_context" }
@@ -130,6 +129,7 @@ Based on the conversation history and these instructions, answer the user's last
 
 # --- Helper function to count tokens ---
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
+    # (No changes in this function)
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -147,6 +147,7 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
 
 # --- Layer 1: History Management Function ---
 async def manage_history_with_summary(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
+    # (No changes in this function)
     checkpoint = memory.get(config)
     if not checkpoint: return
     history = checkpoint.get("messages", [])
@@ -172,6 +173,7 @@ async def manage_history_with_summary(memory: MemorySaver, config: dict, llm_for
 
 # --- Layer 2: Final Prompt Safety Net ---
 def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
+    # (No changes in this function)
     total_tokens = count_tokens(messages)
     if total_tokens <= max_tokens:
         return messages
@@ -203,12 +205,12 @@ def get_agent_components():
         return {"agent_executor": agent_executor, "memory_instance": memory, "llm_for_summary": llm, "main_system_prompt_content_str": system_prompt_content_value}
     
     print("@@@ get_agent_components: Populating cache...")
-    # FIX: Use loop.run_until_complete instead of asyncio.run()
     loop = get_or_create_eventloop()
     return loop.run_until_complete(run_async_initialization())
 
 # --- Async handler for user queries ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
+    # (No changes in this function)
     assistant_reply = ""
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
@@ -243,56 +245,30 @@ def handle_new_query_submission(query_text: str):
         st.session_state.messages.append({"role": "user", "content": query_text})
         st.session_state.query_to_process = query_text
         st.session_state.thinking_for_ui = True
-        st.rerun() # It's better to rerun here to immediately show the user's message
+        st.rerun()
 
-# --- Streamlit App UI Starts Here ---
-
-# This CSS block now achieves the final layout using pure CSS manipulation.
+# --- Streamlit App UI ---
+# (CSS block is unchanged from the last working version)
 st.markdown("""
 <style>
     .st-emotion-cache-1629p8f {
-        border: 1px solid #e6007e;
-        border-radius: 7px;
-        position: fixed;
-        bottom: 40px;
-        width: 100%;
-        max-width: 736px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 101;
-        box-sizing: border-box;
+        border: 1px solid #e6007e; border-radius: 7px; position: fixed; bottom: 40px;
+        width: 100%; max-width: 736px; left: 50%; transform: translateX(-50%);
+        z-index: 101; box-sizing: border-box;
     }
-    .st-emotion-cache-1629p8f:focus-within {
-        border-color: #e6007e;
-    }
-    [data-testid="stCaptionContainer"] p {
-        font-size: 1.3em !important;
-    }
+    .st-emotion-cache-1629p8f:focus-within { border-color: #e6007e; }
+    [data-testid="stCaptionContainer"] p { font-size: 1.3em !important; }
     .terms-footer {
-        position: fixed;
-        bottom: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 100%;
-        max-width: 736px;
-        text-align: center;
-        color: grey;
-        font-size: 0.90rem;
-        z-index: 100;
-        height: 20px;
-        line-height: 20px;
+        position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+        width: 100%; max-width: 736px; text-align: center; color: grey;
+        font-size: 0.90rem; z-index: 100; height: 20px; line-height: 20px;
     }
-    main .block-container {
-        padding-bottom: 100px;
-    }
+    main .block-container { padding-bottom: 100px; }
     .stApp {
-        overflow-y: auto !important;
-        height: 100vh !important;
+        overflow-y: auto !important; height: 100vh !important;
         min-height: -webkit-fill-available !important;
     }
-    .st-scroll-to-bottom {
-        display: none !important;
-    }
+    .st-scroll-to-bottom { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -300,7 +276,7 @@ st.markdown("<h1 style='font-size: 24px;'>FiFi, AI sourcing assistant</h1>", uns
 st.caption("Hello, I am FiFi, your AI-powered assistant, designed to support you across the sourcing and product development journey. Find the right ingredients, explore recipe ideas, technical data, and more.")
 
 if SECRETS_ARE_MISSING:
-    st.error("Secrets missing. Please configure OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, and TAVILY_API_KEY.")
+    st.error("Secrets missing. Please configure necessary environment variables.")
     st.stop()
 
 # Initialize session state variables
@@ -340,7 +316,7 @@ if st.sidebar.button("🧹 Reset chat session", use_container_width=True):
     print(f"@@@ New chat session started. Thread ID: {st.session_state.thread_id}")
     st.rerun()
 
-# FIX: Display chat messages with Base64 avatars
+# Display chat messages with Base64 avatars
 fifi_avatar_icon = f"data:image/png;base64,{FIFI_AVATAR_B64}" if FIFI_AVATAR_B64 else "🤖"
 user_avatar_icon = f"data:image/png;base64,{USER_AVATAR_B64}" if USER_AVATAR_B64 else "🧑‍💻"
 for message in st.session_state.get("messages", []):
@@ -352,24 +328,23 @@ if st.session_state.get('thinking_for_ui', False):
     with st.chat_message("assistant", avatar=fifi_avatar_icon):
         st.markdown("⌛ FiFi is thinking...")
 
-# This markdown object is now controlled by the ".terms-footer" CSS class
+# Display Terms of Service footer
 st.markdown("""
 <div class="terms-footer">
     By using this agent, you agree to our <a href="https://www.12taste.com/terms-conditions/" target="_blank">Terms of Service</a>.
 </div>
 """, unsafe_allow_html=True)
 
-# THE ORIGINAL CHAT INPUT - Its position is lifted by the CSS above.
+# Chat input
 user_prompt = st.chat_input("Ask me for ingredients, recipes, or product development—in any language.", key="main_chat_input",
                             disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
 if user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
 
-# Process new queries after the rerun from input handling
+# Process new queries
 if st.session_state.get('query_to_process'):
     query_to_run = st.session_state.query_to_process
     st.session_state.query_to_process = None
-    # FIX: Use loop.run_until_complete instead of asyncio.run()
     loop = get_or_create_eventloop()
     loop.run_until_complete(execute_agent_call_with_memory(query_to_run, agent_components))

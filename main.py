@@ -244,7 +244,7 @@ st.markdown("""
 
     /* 3. Style for the "Terms and Conditions" text */
     .terms-footer {
-        position: absolute; /* Fix it to the bottom of the viewport */
+        position: relative; /* Fix it to the bottom of the viewport */
         bottom: 10px;    /* Adjusted: Positioned lower than the chat input, closer to the very bottom */
         
         /* These properties center the footer relative to the chat input */

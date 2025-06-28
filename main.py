@@ -224,7 +224,7 @@ st.markdown("""
         border: 1px solid #e6007e; /* Ensures the border is pink even when unfocused */
         border-radius: 7px;
         position: fixed; /* Keep it fixed relative to the iframe's viewport */
-        bottom: 40px;    /* Positioned 40px from the bottom to allow space for the Terms footer below it */
+        bottom: 55px;    /* Positioned 40px from the bottom to allow space for the Terms footer below it */
         width: 100%;
         max-width: 736px; /* Align with Streamlit's main content column for consistent layout */
         left: 50%;

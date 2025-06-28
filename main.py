@@ -250,26 +250,59 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App UI ---
+# This CSS block now achieves the final layout using pure CSS manipulation.
 st.markdown("""
 <style>
+    /* 1. Styling for the chat input container (Your Original Version) */
     .st-emotion-cache-1629p8f {
-        border: 1px solid #e6007e; border-radius: 7px; position: fixed; bottom: 40px;
-        width: 100%; max-width: 736px; left: 50%; transform: translateX(-50%);
-        z-index: 101; box-sizing: border-box;
+        border: 1px solid #ffffff;
+        border-radius: 7px;
+        bottom: 10px;
+        position: fixed;
+        width: 100%;
+        max-width: 736px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 101;
     }
-    .st-emotion-cache-1629p8f:focus-within { border-color: #e6007e; }
-    [data-testid="stCaptionContainer"] p { font-size: 1.3em !important; }
+    .st-emotion-cache-1629p8f:focus-within {
+        border-color: #e6007e;
+    }
+
+    /* 2. Increase the font size for the introductory caption (Your Original Version) */
+    [data-testid="stCaptionContainer"] p {
+        font-size: 1.3em !important;
+    }
+
+    /* 3. Style for the "Terms and Conditions" text (Your Original Version) */
     .terms-footer {
-        position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
-        width: 100%; max-width: 736px; text-align: center; color: grey;
-        font-size: 0.90rem; z-index: 100; height: 20px; line-height: 20px;
+        position: fixed;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        max-width: 736px;
+        text-align: center;
+        color: grey;
+        font-size: 0.90rem;
+        z-index: 100;
     }
-    main .block-container { padding-bottom: 100px; }
+
+    /* 4. Add padding to the main content area (Your Original Version) */
+    [data-testid="stVerticalBlock"] {
+        padding-bottom: 50px;
+    }
+
+    /* 5. FIX: Added rules for iframe stability as requested */
     .stApp {
-        overflow-y: auto !important; height: 100vh !important;
+        overflow-y: auto !important;
+        height: 100vh !important;
         min-height: -webkit-fill-available !important;
     }
-    .st-scroll-to-bottom { display: none !important; }
+    .st-scroll-to-bottom {
+        display: none !important;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 

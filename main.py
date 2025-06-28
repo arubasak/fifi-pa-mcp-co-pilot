@@ -263,7 +263,7 @@ st.markdown("""
     /* This creates space at the bottom of the scrollable content, so chat messages don't go under fixed elements */
     /* Targets the main vertical block where chat messages are displayed */
     [data-testid="stVerticalBlock"] {
-        padding-bottom: 120px; /* Adjust this value as needed based on total height of input + footer + desired gap */
+        padding-bottom: 100px; /* Adjust this value as needed based on total height of input + footer + desired gap */
     }
 
     /* OPTIONAL: Adjust default Streamlit padding around the chat input if needed */

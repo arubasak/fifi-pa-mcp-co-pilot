@@ -244,7 +244,7 @@ st.markdown("""
     /* 3. Style for the "Terms and Conditions" text */
     .terms-footer {
         position: fixed; /* Fix it to the bottom of the viewport */
-        bottom: 10px;    /* Positioned very close to the absolute bottom of the iframe */
+        bottom: 20px;    /* Positioned very close to the absolute bottom of the iframe */
         left: 50%;
         transform: translateX(-50%); /* Centers the fixed element horizontally */
         width: 100%;
@@ -262,7 +262,7 @@ st.markdown("""
        title, and description don't go under fixed elements. */
     main .block-container {
         /* This selector targets the main content area block, which usually handles scrolling */
-        padding-bottom: 110px; /* Adjust this value (e.g., 90px, 110px) if header is still off-screen
+        padding-bottom: 70px; /* Adjust this value (e.g., 90px, 110px) if header is still off-screen
                                    or too much empty space appears.
                                    Calculation: Input height (~60px) + Gap (~10px) + Footer height (~20px) = ~90px.
                                    Adding a bit extra (100px) provides a safe margin. */

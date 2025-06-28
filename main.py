@@ -224,7 +224,7 @@ st.markdown("""
         border: 1px solid #e6007e; /* Ensures the border is pink even when unfocused */
         border-radius: 7px;
         position: fixed; /* Keep it fixed relative to the iframe's viewport */
-        bottom: 55px;    /* Positioned 40px from the bottom to allow space for the Terms footer below it */
+        bottom: 30px;    /* Positioned 40px from the bottom to allow space for the Terms footer below it */
         width: 100%;
         max-width: 736px; /* Align with Streamlit's main content column for consistent layout */
         left: 50%;
@@ -244,7 +244,7 @@ st.markdown("""
     /* 3. Style for the "Terms and Conditions" text */
     .terms-footer {
         position: fixed; /* Fix it to the bottom of the viewport */
-        bottom: 30px;    /* Positioned very close to the absolute bottom of the iframe */
+        bottom: 10px;    /* Positioned very close to the absolute bottom of the iframe */
         left: 50%;
         transform: translateX(-50%); /* Centers the fixed element horizontally */
         width: 100%;
@@ -262,7 +262,7 @@ st.markdown("""
        title, and description don't go under fixed elements. */
     main .block-container {
         /* This selector targets the main content area block, which usually handles scrolling */
-        padding-bottom: 100px; /* Adjust this value (e.g., 90px, 110px) if header is still off-screen
+        padding-bottom: 110px; /* Adjust this value (e.g., 90px, 110px) if header is still off-screen
                                    or too much empty space appears.
                                    Calculation: Input height (~60px) + Gap (~10px) + Footer height (~20px) = ~90px.
                                    Adding a bit extra (100px) provides a safe margin. */

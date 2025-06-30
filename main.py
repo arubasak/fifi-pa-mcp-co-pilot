@@ -7,14 +7,20 @@ import tiktoken
 import os
 import traceback
 import uuid
+from typing import Any
 
+# --- LangGraph and LangChain Imports ---
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.prebuilt.chat_agent_executor import AgentState
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 from tavily import TavilyClient
+
+# --- The correct summarization tool from langmem ---
+from langmem.short_term import SummarizationNode
 
 # --- Helper function to load and Base64-encode images for stateless deployment ---
 @st.cache_data
@@ -51,12 +57,20 @@ def get_or_create_eventloop():
         asyncio.set_event_loop(loop)
         return loop
 
-# --- FINAL: "Balanced" Memory Strategy Constants (Implements ConversationSummaryBufferMemory logic) ---
-HISTORY_MESSAGE_THRESHOLD = 100       # Secondary trigger, token threshold will likely hit first.
-HISTORY_TOKEN_THRESHOLD = 10000       # BALANCED: Trigger summarization when history exceeds this many tokens.
-MESSAGES_TO_RETAIN_AFTER_SUMMARY = 6  # ESSENTIAL: Retain the last 6 messages verbatim for agent context.
-MAX_INPUT_TOKENS = 60000              # Emergency brake limit for the entire payload.
+# --- FINAL: "Balanced" Memory Strategy Constants ---
+# These values are now used to configure the SummarizationNode
+MAX_HISTORY_TOKENS = 20000  # Equivalent to HISTORY_TOKEN_THRESHOLD
+MAX_SUMMARY_TOKENS = 2000   # The explicit size limit for the generated summary
 TOKEN_MODEL_ENCODING = "cl100k_base"
+
+# --- NEW: Define a custom state to hold the summarizer's context ---
+class State(AgentState):
+    """
+    Extending the default AgentState to include a 'context' dictionary.
+    The SummarizationNode will use this to store its internal state,
+    such as the running summary, to avoid re-summarizing on every turn.
+    """
+    context: dict[str, Any]
 
 # --- Load environment variables from secrets ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -68,7 +82,11 @@ TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 SECRETS_ARE_MISSING = not all([OPENAI_API_KEY, MCP_PINECONE_URL, MCP_PINECONE_API_KEY, MCP_PIPEDREAM_URL, TAVILY_API_KEY])
 
 if not SECRETS_ARE_MISSING:
+    # Main LLM for the agent's reasoning
     llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0.2)
+    # A dedicated, non-creative LLM for creating summaries
+    summarization_llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0)
+    
     if 'thread_id' not in st.session_state:
         st.session_state.thread_id = f"fifi_streamlit_session_{uuid.uuid4()}"
     THREAD_ID = st.session_state.thread_id
@@ -110,9 +128,9 @@ def get_system_prompt_content_string(agent_components_for_prompt=None):
 Based on the conversation history and these instructions, answer the user's last query."""
     return prompt
 
-# --- Helper function to count tokens ---
+# --- RE-INTRODUCED: Accurate token counting function for the summarizer ---
 def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
-    """Calculates the total number of tokens for a list of messages."""
+    """Calculates the total number of tokens for a list of messages using the official tiktoken library."""
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
@@ -128,55 +146,7 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     num_tokens += 2
     return num_tokens
 
-# --- Core Memory Management Function ---
-async def manage_history_with_summary_buffer_logic(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
-    """This function is called ONLY when history exceeds a token threshold. It summarizes old messages."""
-    st.info("Conversation history is long. Summarizing older messages to save context...")
-    print(f"@@@ MEMORY MGMT: Summarization triggered.")
-    
-    checkpoint = memory.get(config)
-    history = checkpoint.get("messages", [])
-
-    if len(history) <= MESSAGES_TO_RETAIN_AFTER_SUMMARY:
-        print("@@@ MEMORY MGMT: Not enough messages to summarize while retaining the required buffer.")
-        return
-
-    messages_to_summarize = history[:-MESSAGES_TO_RETAIN_AFTER_SUMMARY]
-    messages_to_keep = history[-MESSAGES_TO_RETAIN_AFTER_SUMMARY:]
-
-    summarization_prompt_list = [
-        SystemMessage(content="You are an expert at creating concise, third-person summaries of multi-turn agentic conversations. Extract all key entities, topics, questions, and critical information from tool outputs. Focus on the core facts and actions. **The final summary must be under 2000 tokens.**"),
-        HumanMessage(content="Please summarize the following conversation:\n\n" + "\n".join([f"{type(m).__name__}: {m.content}" for m in messages_to_summarize]))
-    ]
-    try:
-        summary_response = await llm_for_summary.ainvoke(summarization_prompt_list)
-        summary_text = summary_response.content
-        new_history = [SystemMessage(content=f"This is a summary of the preceding conversation: {summary_text}")] + messages_to_keep
-        checkpoint["messages"] = new_history
-        memory.put(config, checkpoint)
-        print("@@@ MEMORY MGMT: History successfully summarized.")
-    except Exception as e:
-        st.error(f"Could not summarize history: {e}")
-        print(f"Error during summarization: {e}\n{traceback.format_exc()}")
-
-# --- Emergency Safety Net Function ---
-def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
-    """This is an EMERGENCY brake, triggered only if the payload exceeds the absolute max token limit."""
-    total_tokens = count_tokens(messages)
-    if total_tokens <= max_tokens:
-        return messages
-    
-    st.warning(f"CRITICAL: Request payload ({total_tokens} tokens) exceeds the absolute limit. This may be due to a summarization failure. Truncating history to prevent a crash. Context may be lost.")
-    print(f"@@@ EMERGENCY SAFETY NET: Payload size {total_tokens} > {max_tokens}. Truncating.")
-    
-    system_message = messages[0]
-    user_query = messages[-1]
-    history = messages[1:-1]
-    while count_tokens([system_message] + history + [user_query]) > max_tokens and history:
-        history.pop(0)
-    return [system_message] + history + [user_query]
-
-# --- Async handler for agent initialization (Cached) ---
+# --- Async handler for agent initialization (CHANGED) ---
 @st.cache_resource(ttl=3600)
 def get_agent_components():
     """Initializes and caches the expensive agent components."""
@@ -188,62 +158,57 @@ def get_agent_components():
         })
         mcp_tools = await client.get_tools()
         all_tools = list(mcp_tools) + [tavily_search_fallback]
-        memory = MemorySaver()
+        
+        checkpointer = MemorySaver()
+
+        # --- Instantiate the SummarizationNode with our balanced settings AND custom token counter ---
+        summarization_node = SummarizationNode(
+            # This is the crucial change: we inject our more accurate token counter.
+            token_counter=lambda messages: count_tokens(messages, model_encoding=TOKEN_MODEL_ENCODING),
+            model=summarization_llm,
+            max_tokens=MAX_HISTORY_TOKENS,
+            max_summary_tokens=MAX_SUMMARY_TOKENS,
+            input_messages_key="messages",
+            output_messages_key="messages",
+        )
+
         pinecone_tool_name = "functions.get_context"
         system_prompt_content_value = get_system_prompt_content_string({'pinecone_tool_name': pinecone_tool_name})
-        agent_executor = create_react_agent(llm, all_tools, checkpointer=memory)
+
+        # --- The agent is now created with the pre_model_hook and custom state ---
+        agent_executor = create_react_agent(
+            llm,
+            all_tools,
+            checkpointer=checkpointer,
+            state_schema=State,
+            pre_model_hook=summarization_node,
+            system_message=system_prompt_content_value
+        )
+        
         print("@@@ ASYNC: Initialization complete.")
-        return {"agent_executor": agent_executor, "memory_instance": memory, "llm_for_summary": llm, "main_system_prompt_content_str": system_prompt_content_value}
+        return {"agent_executor": agent_executor}
 
     print("@@@ get_agent_components: Populating cache...")
     loop = get_or_create_eventloop()
     return loop.run_until_complete(run_async_initialization())
 
-# --- ** CORRECTED AND DEBUGGED ** Main Agent Orchestrator ---
-async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
+# --- SIMPLIFIED: Agent Orchestrator ---
+async def execute_agent_call(user_query: str, agent_components: dict):
     """
-    Runs the agent, managing history efficiently by checking the size of the
-    ENTIRE potential payload before invocation. This prevents the bug where the
-    final payload could exceed the threshold without triggering summarization.
+    Runs the agent. All memory management is now handled automatically
+    by the SummarizationNode via the pre_model_hook.
     """
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
-        memory_instance = agent_components["memory_instance"]
-        main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
+        agent_executor = agent_components["agent_executor"]
 
-        # 1. Get the current history.
-        current_checkpoint = memory_instance.get(config)
-        history_messages = current_checkpoint.get("messages", []) if current_checkpoint else []
+        # The event is now much simpler. We just send the new user message.
+        # The agent executor and the checkpointer handle loading the past history.
+        # The summarization hook handles condensing it automatically.
+        event = {"messages": [HumanMessage(content=user_query)]}
+        result = await agent_executor.ainvoke(event, config=config)
 
-        # 2. Construct the FULL potential payload for the NEXT call.
-        # This includes the system prompt, the current history, and the new user query.
-        potential_payload = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
-        
-        # 3. Check the token count of this entire potential payload.
-        potential_payload_token_count = count_tokens(potential_payload)
-        
-        # This debug line is helpful for testing the logic.
-        print(f"@@@ DEBUG: Potential payload token count is {potential_payload_token_count}. Threshold is {HISTORY_TOKEN_THRESHOLD}.")
-
-        # 4. If the potential payload exceeds the threshold, trigger summarization NOW.
-        if potential_payload_token_count > HISTORY_TOKEN_THRESHOLD:
-            await manage_history_with_summary_buffer_logic(memory_instance, config, agent_components["llm_for_summary"])
-            
-            # 5. After summarizing, we MUST refresh the history to get the new, smaller list.
-            current_checkpoint = memory_instance.get(config)
-            history_messages = current_checkpoint.get("messages", [])
-
-        # 6. Re-assemble the final payload using the (potentially summarized) history.
-        event_messages = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
-        
-        # 7. Apply the final emergency safety net.
-        final_messages = truncate_prompt_if_needed(event_messages, MAX_INPUT_TOKENS)
-        
-        # 8. Invoke the agent.
-        event = {"messages": final_messages}
-        result = await agent_components["agent_executor"].ainvoke(event, config=config)
-
-        # 9. Robustly parse the response.
+        # Robustly parse the response.
         assistant_reply = ""
         if isinstance(result, dict) and "messages" in result and result["messages"]:
             for msg in reversed(result["messages"]):
@@ -260,7 +225,6 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
         print(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
         return f"(An error occurred during processing. Please try again.)"
 
-
 # --- Input Handling Function for Streamlit ---
 def handle_new_query_submission(query_text: str):
     """Manages session state for a new user query."""
@@ -274,6 +238,7 @@ def handle_new_query_submission(query_text: str):
 # --- Streamlit App UI and Main Execution Logic ---
 st.markdown("""
 <style>
+    /* CSS remains unchanged */
     .st-emotion-cache-1629p8f { border: 1px solid #ffffff; border-radius: 7px; bottom: 5px; position: fixed; width: 100%; max-width: 736px; left: 50%; transform: translateX(-50%); z-index: 101; }
     .st-emotion-cache-1629p8f:focus-within { border-color: #e6007e; }
     [data-testid="stCaptionContainer"] p { font-size: 1.3em !important; }
@@ -354,8 +319,9 @@ if user_prompt:
 if st.session_state.get('query_to_process'):
     query_to_run = st.session_state.query_to_process
     
+    # The call is now to the much simpler, more robust agent execution function.
     loop = get_or_create_eventloop()
-    assistant_reply = loop.run_until_complete(execute_agent_call_with_memory(query_to_run, agent_components))
+    assistant_reply = loop.run_until_complete(execute_agent_call(query_to_run, agent_components))
 
     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     st.session_state.thinking_for_ui = False

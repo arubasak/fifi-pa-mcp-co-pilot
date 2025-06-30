@@ -53,7 +53,7 @@ def get_or_create_eventloop():
 
 # --- FINAL: "Balanced" Memory Strategy Constants (Implements ConversationSummaryBufferMemory logic) ---
 HISTORY_MESSAGE_THRESHOLD = 100       # Secondary trigger, token threshold will likely hit first.
-HISTORY_TOKEN_THRESHOLD = 20000       # BALANCED: Trigger summarization when history exceeds this many tokens.
+HISTORY_TOKEN_THRESHOLD = 10000       # BALANCED: Trigger summarization when history exceeds this many tokens.
 MESSAGES_TO_RETAIN_AFTER_SUMMARY = 6  # ESSENTIAL: Retain the last 6 messages verbatim for agent context.
 MAX_INPUT_TOKENS = 60000              # Emergency brake limit for the entire payload.
 TOKEN_MODEL_ENCODING = "cl100k_base"

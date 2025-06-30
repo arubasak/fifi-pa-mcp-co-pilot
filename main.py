@@ -58,7 +58,7 @@ def get_or_create_eventloop():
         return loop
 
 # --- FINAL: "Balanced" Memory Strategy Constants ---
-MAX_HISTORY_TOKENS = 20000
+MAX_HISTORY_TOKENS = 10000
 MAX_SUMMARY_TOKENS = 2000
 TOKEN_MODEL_ENCODING = "cl100k_base"
 

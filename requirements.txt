@@ -3,6 +3,7 @@ streamlit==1.46.0
 tavily-python
 langchain-tavily
 fpdf2
+langmem
 
 # Env handling
 python-dotenv==1.1.0

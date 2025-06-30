@@ -17,11 +17,11 @@ from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
-from tavily import TavilyClient
+# Using a general utility for token counting, as tiktoken needs explicit encoding
+from langchain_core.messages.utils import count_tokens_approximately 
 
 # --- The correct summarization tool from langmem ---
 from langmem.short_term import SummarizationNode
-# Removed unnecessary `count_tokens_approximately` import as we use our custom one.
 
 # --- Helper function to load and Base64-encode images for stateless deployment ---
 @st.cache_data
@@ -58,9 +58,9 @@ def get_or_create_eventloop():
         return loop
 
 # --- FINAL: "Balanced" Memory Strategy Constants ---
-MAX_HISTORY_TOKENS = 10000
+MAX_HISTORY_TOKENS = 20000
 MAX_SUMMARY_TOKENS = 2000
-TOKEN_MODEL_ENCODING = "cl100k_base"
+TOKEN_MODEL_ENCODING = "cl100k_base" # Still for Tiktoken if used elsewhere directly
 
 # --- NEW: Define a custom state to hold the summarizer's context ---
 class State(AgentState):
@@ -102,7 +102,7 @@ def tavily_search_fallback(query: str) -> str:
 
 # --- System Prompt Definition ---
 def get_system_prompt_content_string():
-    pinecone_tool = "functions.get_context" # Assuming a static value here for simplicity
+    pinecone_tool = "functions.get_context"
     return f"""You are FiFi, the expert AI assistant for 1-2-Taste, specializing in food and beverage ingredients. Your role is to assist with product inquiries, industry trends, food science, and B2B support. Politely decline out-of-scope questions.
 
 **Tool Selection Framework:**
@@ -117,8 +117,9 @@ def get_system_prompt_content_string():
 
 Based on the conversation history and these instructions, answer the user's last query."""
 
-# --- Accurate token counting function for the summarizer ---
-def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
+# --- Helper function for tiktoken-based token counting (for reference, but count_tokens_approximately is used by node) ---
+# Keeping this for accuracy reference. Note: SummarizationNode uses `count_tokens_approximately` by default.
+def count_tokens_tiktoken(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> int:
     """Calculates the total number of tokens for a list of messages using the official tiktoken library."""
     if not messages: return 0
     try: encoding = tiktoken.get_encoding(model_encoding)
@@ -148,32 +149,39 @@ def get_agent_components():
     mcp_tools = loop.run_until_complete(client.get_tools())
     all_tools = list(mcp_tools) + [tavily_search_fallback]
     
-    # Store the checkpointer here so it can be accessed for clearing history
     checkpointer = MemorySaver()
-    system_prompt = get_system_prompt_content_string()
+    system_prompt_content = get_system_prompt_content_string()
 
-    # 1. Instantiate the official SummarizationNode with our accurate token counter.
+    # 1. Instantiate the official SummarizationNode.
+    # Note: `SummarizationNode` uses `count_tokens_approximately` by default,
+    # which is less accurate than tiktoken but provided by LangChain.
+    # We are explicitly stating parameters.
     summarization_node = SummarizationNode(
-        token_counter=lambda messages: count_tokens(messages, model_encoding=TOKEN_MODEL_ENCODING),
         model=summarization_llm,
         max_tokens=MAX_HISTORY_TOKENS,
         max_summary_tokens=MAX_SUMMARY_TOKENS,
         input_messages_key="messages",
         output_messages_key="messages",
+        # system_message is NOT a constructor argument for SummarizationNode.
+        # It is handled by the custom_pre_model_hook.
     )
 
-    # 2. Define our custom hook that chains the summarizer and system prompt.
+    # 2. Define our own custom hook that chains the summarizer and system prompt.
     def custom_pre_model_hook(state: State) -> dict:
         """
         A custom hook that first runs the summarization node, and then
         prepends the static system message to the processed message list.
         """
+        # Ensure 'context' is initialized in the state for SummarizationNode's internal use.
+        # This makes the hook robust even if the very first state doesn't have it.
+        if "context" not in state:
+            state["context"] = {}
+
         # Run the official summarization logic first.
         summarized_state = summarization_node(state)
         
         # Manually prepend the system message to the result.
-        # This is safe because the SummarizationNode's own logic does not include the system message in its summarization.
-        summarized_state["messages"] = [SystemMessage(content=system_prompt)] + summarized_state["messages"]
+        summarized_state["messages"] = [SystemMessage(content=system_prompt_content)] + summarized_state["messages"]
         return summarized_state
 
     # 3. Create the agent, passing our custom hook.
@@ -183,21 +191,21 @@ def get_agent_components():
         checkpointer=checkpointer,
         state_schema=State,
         pre_model_hook=custom_pre_model_hook,
+        # system_message is NOT a valid argument for create_react_agent.
     )
     
     print("@@@ Initialization complete.")
-    # Return the checkpointer so it can be used for session reset.
     return {"agent_executor": agent_executor, "checkpointer": checkpointer}
 
 # --- SIMPLIFIED: Agent Orchestrator ---
 async def execute_agent_call(user_query: str, agent_components: dict):
-    """Runs the agent. Memory is handled automatically by the pre_model_hook."""
+    """Runs the agent. Memory and system prompt are handled automatically by the pre_model_hook."""
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
         agent_executor = agent_components["agent_executor"]
         
         # The input to the agent is just the human message.
-        # The pre_model_hook will add the system prompt and manage history.
+        # The pre_model_hook will ensure the system prompt and managed history are prepended.
         event = {"messages": [HumanMessage(content=user_query)]}
         result = await agent_executor.ainvoke(event, config=config)
 
@@ -279,7 +287,6 @@ if st.sidebar.button("🧹 Reset chat session", use_container_width=True):
     # Retrieve the checkpointer and clear the history for the current thread_id
     checkpointer = agent_components.get("checkpointer")
     if checkpointer:
-        # MemorySaver's 'put' method with an empty list effectively clears the history for the thread_id
         checkpointer.put({"configurable": {"thread_id": THREAD_ID}}, {"messages": []})
         print(f"@@@ Chat history for thread ID {THREAD_ID} cleared.")
         
@@ -317,7 +324,6 @@ if user_prompt:
 if st.session_state.get('query_to_process'):
     query_to_run = st.session_state.query_to_process
     
-    # Run the agent (now correctly integrated)
     loop = get_or_create_eventloop()
     assistant_reply = loop.run_until_complete(execute_agent_call(query_to_run, agent_components))
 

@@ -118,29 +118,25 @@ def count_tokens(messages: list, model_encoding: str = TOKEN_MODEL_ENCODING) -> 
     except Exception: encoding = tiktoken.get_encoding("cl100k_base")
     num_tokens = 0
     for message in messages:
-        num_tokens += 4  # Per-message overhead
+        num_tokens += 4
         if isinstance(message, BaseMessage): content = message.content
         elif isinstance(message, dict): content = message.get("content", "")
         else: content = str(message)
         if content is not None:
             try: num_tokens += len(encoding.encode(str(content)))
             except (TypeError, AttributeError): pass
-    num_tokens += 2  # Every reply is primed with <|im_start|>
+    num_tokens += 2
     return num_tokens
 
 # --- Core Memory Management Function ---
 async def manage_history_with_summary_buffer_logic(memory: MemorySaver, config: dict, llm_for_summary: ChatOpenAI):
-    """
-    This function is called ONLY when history exceeds a token threshold. 
-    It summarizes old messages, implementing the ConversationSummaryBufferMemory logic.
-    """
+    """This function is called ONLY when history exceeds a token threshold. It summarizes old messages."""
     st.info("Conversation history is long. Summarizing older messages to save context...")
     print(f"@@@ MEMORY MGMT: Summarization triggered.")
     
     checkpoint = memory.get(config)
     history = checkpoint.get("messages", [])
 
-    # Safety check: Do not summarize if there aren't enough messages to preserve the buffer.
     if len(history) <= MESSAGES_TO_RETAIN_AFTER_SUMMARY:
         print("@@@ MEMORY MGMT: Not enough messages to summarize while retaining the required buffer.")
         return
@@ -148,7 +144,6 @@ async def manage_history_with_summary_buffer_logic(memory: MemorySaver, config: 
     messages_to_summarize = history[:-MESSAGES_TO_RETAIN_AFTER_SUMMARY]
     messages_to_keep = history[-MESSAGES_TO_RETAIN_AFTER_SUMMARY:]
 
-    # Prompt for the summarizer LLM, with an explicit token limit for the output.
     summarization_prompt_list = [
         SystemMessage(content="You are an expert at creating concise, third-person summaries of multi-turn agentic conversations. Extract all key entities, topics, questions, and critical information from tool outputs. Focus on the core facts and actions. **The final summary must be under 2000 tokens.**"),
         HumanMessage(content="Please summarize the following conversation:\n\n" + "\n".join([f"{type(m).__name__}: {m.content}" for m in messages_to_summarize]))
@@ -156,8 +151,6 @@ async def manage_history_with_summary_buffer_logic(memory: MemorySaver, config: 
     try:
         summary_response = await llm_for_summary.ainvoke(summarization_prompt_list)
         summary_text = summary_response.content
-        
-        # Rebuild the history with the summary at the beginning.
         new_history = [SystemMessage(content=f"This is a summary of the preceding conversation: {summary_text}")] + messages_to_keep
         checkpoint["messages"] = new_history
         memory.put(config, checkpoint)
@@ -168,16 +161,11 @@ async def manage_history_with_summary_buffer_logic(memory: MemorySaver, config: 
 
 # --- Emergency Safety Net Function ---
 def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
-    """
-    This is an EMERGENCY brake. It is only triggered if the total payload to the LLM
-    exceeds the absolute max token limit, which usually indicates a failure in the
-    primary summarization memory strategy.
-    """
+    """This is an EMERGENCY brake, triggered only if the payload exceeds the absolute max token limit."""
     total_tokens = count_tokens(messages)
     if total_tokens <= max_tokens:
         return messages
     
-    # The warning is made more severe to highlight that this is an exceptional event.
     st.warning(f"CRITICAL: Request payload ({total_tokens} tokens) exceeds the absolute limit. This may be due to a summarization failure. Truncating history to prevent a crash. Context may be lost.")
     print(f"@@@ EMERGENCY SAFETY NET: Payload size {total_tokens} > {max_tokens}. Truncating.")
     
@@ -185,7 +173,7 @@ def truncate_prompt_if_needed(messages: list, max_tokens: int) -> list:
     user_query = messages[-1]
     history = messages[1:-1]
     while count_tokens([system_message] + history + [user_query]) > max_tokens and history:
-        history.pop(0)  # Remove the oldest messages until the payload fits.
+        history.pop(0)
     return [system_message] + history + [user_query]
 
 # --- Async handler for agent initialization (Cached) ---
@@ -211,49 +199,58 @@ def get_agent_components():
     loop = get_or_create_eventloop()
     return loop.run_until_complete(run_async_initialization())
 
-# --- Main Agent Orchestrator ---
+# --- ** CORRECTED AND DEBUGGED ** Main Agent Orchestrator ---
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
     """
-    Runs the agent, managing history efficiently before invocation.
-    This function contains the "sawtooth" logic for efficient memory management.
+    Runs the agent, managing history efficiently by checking the size of the
+    ENTIRE potential payload before invocation. This prevents the bug where the
+    final payload could exceed the threshold without triggering summarization.
     """
     try:
         config = {"configurable": {"thread_id": THREAD_ID}}
         memory_instance = agent_components["memory_instance"]
-        
-        # 1. Efficiently check token count of the current history.
+        main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
+
+        # 1. Get the current history.
         current_checkpoint = memory_instance.get(config)
         history_messages = current_checkpoint.get("messages", []) if current_checkpoint else []
-        history_token_count = count_tokens(history_messages)
 
-        # 2. Only call the expensive summarization function if the threshold is breached.
-        if history_token_count > HISTORY_TOKEN_THRESHOLD:
+        # 2. Construct the FULL potential payload for the NEXT call.
+        # This includes the system prompt, the current history, and the new user query.
+        potential_payload = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
+        
+        # 3. Check the token count of this entire potential payload.
+        potential_payload_token_count = count_tokens(potential_payload)
+        
+        # This debug line is helpful for testing the logic.
+        print(f"@@@ DEBUG: Potential payload token count is {potential_payload_token_count}. Threshold is {HISTORY_TOKEN_THRESHOLD}.")
+
+        # 4. If the potential payload exceeds the threshold, trigger summarization NOW.
+        if potential_payload_token_count > HISTORY_TOKEN_THRESHOLD:
             await manage_history_with_summary_buffer_logic(memory_instance, config, agent_components["llm_for_summary"])
-            # 3. Refresh history from memory after summarization to get the new, smaller list.
+            
+            # 5. After summarizing, we MUST refresh the history to get the new, smaller list.
             current_checkpoint = memory_instance.get(config)
             history_messages = current_checkpoint.get("messages", [])
 
-        # 4. Prepare the final payload for the agent.
-        main_system_prompt_content_str = agent_components["main_system_prompt_content_str"]
+        # 6. Re-assemble the final payload using the (potentially summarized) history.
         event_messages = [SystemMessage(content=main_system_prompt_content_str)] + history_messages + [HumanMessage(content=user_query)]
         
-        # 5. Apply the emergency truncation safety net.
+        # 7. Apply the final emergency safety net.
         final_messages = truncate_prompt_if_needed(event_messages, MAX_INPUT_TOKENS)
         
-        # 6. Invoke the agent.
+        # 8. Invoke the agent.
         event = {"messages": final_messages}
         result = await agent_components["agent_executor"].ainvoke(event, config=config)
 
-        # 7. Robustly parse the response.
+        # 9. Robustly parse the response.
         assistant_reply = ""
         if isinstance(result, dict) and "messages" in result and result["messages"]:
             for msg in reversed(result["messages"]):
-                # Find the last AIMessage with actual content.
                 if isinstance(msg, AIMessage) and msg.content:
                     assistant_reply = msg.content
                     break
             else:
-                 # This 'else' on a for loop executes if the loop finishes without a 'break'.
                 assistant_reply = "(Error: No valid AI response content was found in the agent's output.)"
         else:
             assistant_reply = f"(Error: Unexpected response format from agent: {type(result)})"
@@ -262,6 +259,7 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
     except Exception as e:
         print(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
         return f"(An error occurred during processing. Please try again.)"
+
 
 # --- Input Handling Function for Streamlit ---
 def handle_new_query_submission(query_text: str):
@@ -276,7 +274,6 @@ def handle_new_query_submission(query_text: str):
 # --- Streamlit App UI and Main Execution Logic ---
 st.markdown("""
 <style>
-    /* CSS remains unchanged */
     .st-emotion-cache-1629p8f { border: 1px solid #ffffff; border-radius: 7px; bottom: 5px; position: fixed; width: 100%; max-width: 736px; left: 50%; transform: translateX(-50%); z-index: 101; }
     .st-emotion-cache-1629p8f:focus-within { border-color: #e6007e; }
     [data-testid="stCaptionContainer"] p { font-size: 1.3em !important; }
@@ -296,7 +293,6 @@ if SECRETS_ARE_MISSING:
     st.error("Secrets missing. Please configure necessary environment variables.")
     st.stop()
 
-# Initialize session state variables
 if "messages" not in st.session_state: st.session_state.messages = []
 if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
 if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
@@ -355,15 +351,12 @@ if user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
 
-# This is the main application loop trigger.
 if st.session_state.get('query_to_process'):
     query_to_run = st.session_state.query_to_process
     
-    # Run the full agent orchestration.
     loop = get_or_create_eventloop()
     assistant_reply = loop.run_until_complete(execute_agent_call_with_memory(query_to_run, agent_components))
 
-    # Update state and trigger final rerun to display the response.
     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     st.session_state.thinking_for_ui = False
     st.session_state.query_to_process = None

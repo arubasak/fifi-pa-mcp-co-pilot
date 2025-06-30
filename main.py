@@ -205,8 +205,6 @@ def get_agent_components():
     return loop.run_until_complete(run_async_initialization())
 
 # --- FIX: MODIFIED ASYNC HANDLER ---
-# This function now ONLY performs computation and RETURNS the result.
-# It does NOT touch st.session_state or call st.rerun().
 async def execute_agent_call_with_memory(user_query: str, agent_components: dict):
     """
     Runs the agent and returns the assistant's reply or an error string.
@@ -237,7 +235,6 @@ async def execute_agent_call_with_memory(user_query: str, agent_components: dict
 
     except Exception as e:
         print(f"Error during agent invocation: {e}\n{traceback.format_exc()}")
-        # We display the user-facing error in the main thread now
         return f"(An error occurred during processing. Please try again.)"
 
 # --- Input Handling Function ---
@@ -250,68 +247,18 @@ def handle_new_query_submission(query_text: str):
         st.rerun()
 
 # --- Streamlit App UI ---
-# This CSS block now achieves the final layout using pure CSS manipulation.
 st.markdown("""
 <style>
-    /* 1. Styling for the chat input container (Your Original Version) */
-    .st-emotion-cache-1629p8f {
-        border: 1px solid #ffffff;
-        border-radius: 7px;
-        bottom: 5px;
-        position: fixed;
-        width: 100%;
-        max-width: 736px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 101;
-    }
-    .st-emotion-cache-1629p8f:focus-within {
-        border-color: #e6007e;
-    }
-
-    /* 2. Increase the font size for the introductory caption (Your Original Version) */
-    [data-testid="stCaptionContainer"] p {
-        font-size: 1.3em !important;
-    }
-
-    /* 3. Style for the "Terms and Conditions" text (Your Original Version) */
-    .terms-footer {
-        position: fixed;
-        bottom: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 100%;
-        max-width: 736px;
-        text-align: center;
-        color: grey;
-        font-size: 0.90rem;
-        z-index: 100;
-    }
-
-    /* 4. Add a SMALLER padding to the bottom of the whole message list */
-    [data-testid="stVerticalBlock"] {
-        padding-bottom: 40px; /* Reduced to minimize gap at the very bottom */
-    }
-
-    /* 5. FIX: Control the vertical gap BETWEEN individual chat messages */
-    [data-testid="stChatMessage"] {
-        margin-top: 0.1rem !important;
-        margin-bottom: 0.1rem !important;
-    }
-
-    /* 6. Rules for iframe stability */
-    .stApp {
-        overflow-y: auto !important;
-    }
-    .st-scroll-to-bottom {
-        display: none !important;
-    }
-    
-    /* 7. FIX: Hides the sidebar's resizer handle that appears on hover */
-    .st-emotion-cache-1fplawd {
-        display: none !important;
-    }
-
+    /* Your CSS remains unchanged */
+    .st-emotion-cache-1629p8f { border: 1px solid #ffffff; border-radius: 7px; bottom: 5px; position: fixed; width: 100%; max-width: 736px; left: 50%; transform: translateX(-50%); z-index: 101; }
+    .st-emotion-cache-1629p8f:focus-within { border-color: #e6007e; }
+    [data-testid="stCaptionContainer"] p { font-size: 1.3em !important; }
+    .terms-footer { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); width: 100%; max-width: 736px; text-align: center; color: grey; font-size: 0.90rem; z-index: 100; }
+    [data-testid="stVerticalBlock"] { padding-bottom: 40px; }
+    [data-testid="stChatMessage"] { margin-top: 0.1rem !important; margin-bottom: 0.1rem !important; }
+    .stApp { overflow-y: auto !important; }
+    .st-scroll-to-bottom { display: none !important; }
+    .st-emotion-cache-1fplawd { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -326,18 +273,31 @@ if SECRETS_ARE_MISSING:
 if "messages" not in st.session_state: st.session_state.messages = []
 if 'thinking_for_ui' not in st.session_state: st.session_state.thinking_for_ui = False
 if 'query_to_process' not in st.session_state: st.session_state.query_to_process = None
-if 'components_loaded' not in st.session_state: st.session_state.components_loaded = False
 if 'active_question' not in st.session_state: st.session_state.active_question = None
+# --- NEW: Add an initialization flag ---
+if 'agent_initialized' not in st.session_state: st.session_state.agent_initialized = False
 
-try:
-    agent_components = get_agent_components()
-    st.session_state.components_loaded = True
-except Exception as e:
-    st.error(f"Failed to initialize agent. Please refresh. Error: {e}")
-    st.session_state.components_loaded = False
-    st.stop()
 
-# --- UI Rendering ---
+# --- MODIFIED LOGIC: Show spinner during initial load ---
+# This block runs ONLY on the first load when the agent hasn't been created yet.
+if not st.session_state.agent_initialized:
+    with st.spinner("FiFi is waking up... This may take a moment."):
+        try:
+            # We call the function to populate the cache.
+            get_agent_components()
+            # If successful, we set the flag and rerun the script.
+            st.session_state.agent_initialized = True
+            st.rerun()
+        except Exception as e:
+            # If initialization fails, show a permanent error.
+            st.error(f"Failed to initialize the agent. Please check the logs and refresh the page. Error: {e}")
+            st.stop()
+
+# --- Main application logic ---
+# This part of the script will only run AFTER the agent has been successfully initialized.
+# We can now safely get the components from the cache.
+agent_components = get_agent_components()
+
 st.sidebar.markdown("## Quick questions")
 preview_questions = [
     "Suggest some natural strawberry flavours for beverage",
@@ -378,24 +338,21 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Chat input
+# Chat input is now enabled by default since the app won't render this far without initialization.
 user_prompt = st.chat_input("Ask me for ingredients, recipes, or product development—in any language.", key="main_chat_input",
-                            disabled=st.session_state.get('thinking_for_ui', False) or not st.session_state.get("components_loaded", False))
+                            disabled=st.session_state.get('thinking_for_ui', False))
 if user_prompt:
     st.session_state.active_question = None
     handle_new_query_submission(user_prompt)
 
-# --- FIX: MODIFIED PROCESSING LOGIC ---
-# This is now the ONLY place where the async function is called and state is updated.
+# --- Processing logic remains the same ---
 if st.session_state.get('query_to_process'):
     query_to_run = st.session_state.query_to_process
     
-    # Run the async computation and get the reply back
     loop = get_or_create_eventloop()
     assistant_reply = loop.run_until_complete(execute_agent_call_with_memory(query_to_run, agent_components))
 
-    # Now, safely manage state in the main Streamlit thread
     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     st.session_state.thinking_for_ui = False
-    st.session_state.query_to_process = None # Clear the flag
-    st.rerun() # Trigger the final rerun to display the assistant's message
+    st.session_state.query_to_process = None 
+    st.rerun()
